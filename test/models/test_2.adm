@@ -1,0 +1,102 @@
+Adams View model name: test_2
+!
+!-------------------------------- SYSTEM UNITS ---------------------------------
+!
+UNITS/
+, FORCE = POUND_FORCE
+, MASS = POUND_MASS
+, LENGTH = INCH
+, TIME = SECOND
+!
+!----------------------------------- PARTS -------------------------------------
+!
+!----------------------------------- Ground ------------------------------------
+!
+!                            adams_view_name='ground'
+PART/1
+, GROUND
+!
+!------------------------------------ Part -------------------------------------
+!
+!                             adams_view_name='axle'
+PART/2
+, MASS = 0.0199264127
+, CM = 2
+, IP = 0.0059672876, 0.0059667996, 1.174910081E-04
+!
+!                              adams_view_name='cm'
+MARKER/2
+, PART = 2
+, QP = -1.006358325E-07, -3.100849178E-07, 0.8875024323
+, REULER = 100.2312322D, 180D, 0D
+!
+!                           adams_view_name='MARKER_5'
+MARKER/5
+, PART = 2
+!
+!                            adams_view_name='SOLID1'
+GRAPHICS/1
+, EXTERNAL
+, RM = 5
+, FILE = test_2.x_t
+, ELEMENT = SOLID1
+, FACETING_TOLERANCE = 300.0028
+!
+!------------------------------------ Part -------------------------------------
+!
+!                            adams_view_name='PART_3'
+PART/3
+, MASS = 9.00498844
+, CM = 4
+, IP = 13.95776, 13.95776, 13.95776
+!
+!                           adams_view_name='MARKER_3'
+MARKER/3
+, PART = 3
+, QP = 9.842519685, 5.905511811, 0
+!
+!                              adams_view_name='cm'
+MARKER/4
+, PART = 3
+, QP = 9.842519685, 5.905511811, 0
+!
+!                         adams_view_name='ELLIPSOID_2'
+GRAPHICS/6
+, ELLIPSOID
+, CM = 3
+, XSCALE = 3.937007874
+, YSCALE = 3.937007874
+, ZSCALE = 3.937007874
+!
+!---------------------------------- CONTACTS -----------------------------------
+!
+!                          adams_view_name='CONTACT_1'
+CONTACT/1
+, TYPE = SOLID_TO_SOLID
+, IGEOM = 1
+, JGEOM = 6
+, IMPACT
+, STIFFNESS = 5.710147155E+05
+, DAMPING = 57.10147155
+, DMAX = 0.0039370079
+, EXPONENT = 2.2
+, STICTION = OFF
+, MAX_STICTION_DEFORMATION = 0.01
+!
+!------------------------------ DYNAMIC GRAPHICS -------------------------------
+!
+!------------------------- GRAVITATIONAL ACCELERATION --------------------------
+!
+ACCGRAV/
+, JGRAV = -386.0885827
+!
+!----------------------------- ANALYSIS SETTINGS -------------------------------
+!
+OUTPUT/
+, REQSAVE
+, GRSAVE
+!
+RESULTS/
+, XRF
+!
+END

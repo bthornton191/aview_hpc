@@ -1,0 +1,5 @@
+
+file/model=C:\Users\ben.thornton\code\aview_hpc\test\models\test
+! Insert ACF commands here:
+SIMULATE/DYNAMIC, END=0.25, DTOUT=1.0E-02
+stop

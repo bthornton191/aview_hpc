@@ -1,0 +1,70 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "CLI Set Configuration",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc/_cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["set_config" ]
+        },
+        {
+            "name": "CLI Submit",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc/_cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["submit", "test\\models\\test.acf" ]
+        },
+        {
+            "name": "CLI Get Message",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc/_cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["get_results", "test\\results", "/home/ben.thornton/.tmp/tmp.0IPj3YbXtD", "-e", ".msg"]
+        },
+        {
+            "name": "CLI Get Results",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc/_cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["get_results", "test\\results", "/home/ben.thornton/.tmp/tmp.0IPj3YbXtD"]
+        },
+        {
+            "name": "CLI Submit with Auxillary Files",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["submit", "test\\models\\test_2.acf", "--aux_files", "test\\models\\test_2.x_t"]
+        },
+        {
+            "name": "CLI Submit Multi",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/aview_hpc/_cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["submit_multi", "--acf_file", "test\\models\\test_2.acf", "--aux_files", "test\\models\\test_2.x_t", "--acf_file", "test\\models\\test.acf", "--aux_files", "None"]
+        },
+        {
+            "name": "Debug Slurm Monitor",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "slurm_monitor",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+        }
+    ]
+}

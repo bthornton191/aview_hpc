@@ -1,0 +1,347 @@
+2024-03-06 10:19:49:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:19:54:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:19:59:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:20:00:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:20:04:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:21:12:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:21:14:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:21:16:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:21:17:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:21:21:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:22:18:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:22:20:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:22:22:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:22:23:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:22:28:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:23:16:INFO:aview_hpc._cli:Arguments: {'log_level': 'INFO', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:23:17:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:23:19:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:23:23:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:23:24:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:23:28:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:25:35:INFO:aview_hpc._cli:Arguments: {'log_level': 'INFO', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:25:35:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:25:37:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:25:40:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:25:41:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:25:45:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:26:51:INFO:aview_hpc._cli:Arguments: {'log_level': 'INFO', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:26:52:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:26:54:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:26:56:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:26:58:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:27:02:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:51:15:INFO:aview_hpc._cli:Arguments: {'log_level': 'DEBUG', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading KWallet
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading SecretService
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading Windows
+2024-03-06 10:51:15:DEBUG:win32ctypes.core.cffi:Loaded cffi backend
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading chainer
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading libsecret
+2024-03-06 10:51:15:DEBUG:keyring.backend:Loading macOS
+2024-03-06 10:51:15:DEBUG:paramiko.transport:starting thread (client mode): 0x6c83ed10
+2024-03-06 10:51:15:DEBUG:paramiko.transport:Local version/idstring: SSH-2.0-paramiko_3.2.0
+2024-03-06 10:51:15:DEBUG:paramiko.transport:Remote version/idstring: SSH-2.0-OpenSSH_8.0
+2024-03-06 10:51:15:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:51:15:DEBUG:paramiko.transport:=== Key exchange possibilities ===
+2024-03-06 10:51:15:DEBUG:paramiko.transport:kex algos: curve25519-sha256, curve25519-sha256@libssh.org, ecdh-sha2-nistp256, ecdh-sha2-nistp384, ecdh-sha2-nistp521, diffie-hellman-group-exchange-sha256, diffie-hellman-group14-sha256, diffie-hellman-group16-sha512, diffie-hellman-group18-sha512, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha1
+2024-03-06 10:51:15:DEBUG:paramiko.transport:server key: rsa-sha2-512, rsa-sha2-256, ssh-rsa, ecdsa-sha2-nistp256, ssh-ed25519
+2024-03-06 10:51:15:DEBUG:paramiko.transport:client encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:51:15:DEBUG:paramiko.transport:server encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:51:15:DEBUG:paramiko.transport:client mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:51:15:DEBUG:paramiko.transport:server mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:51:15:DEBUG:paramiko.transport:client compress: none, zlib@openssh.com
+2024-03-06 10:51:15:DEBUG:paramiko.transport:server compress: none, zlib@openssh.com
+2024-03-06 10:51:15:DEBUG:paramiko.transport:client lang: <none>
+2024-03-06 10:51:15:DEBUG:paramiko.transport:server lang: <none>
+2024-03-06 10:51:15:DEBUG:paramiko.transport:kex follows: False
+2024-03-06 10:51:15:DEBUG:paramiko.transport:=== Key exchange agreements ===
+2024-03-06 10:51:15:DEBUG:paramiko.transport:Kex: curve25519-sha256@libssh.org
+2024-03-06 10:51:15:DEBUG:paramiko.transport:HostKey: ssh-ed25519
+2024-03-06 10:51:15:DEBUG:paramiko.transport:Cipher: aes128-ctr
+2024-03-06 10:51:15:DEBUG:paramiko.transport:MAC: hmac-sha2-256
+2024-03-06 10:51:15:DEBUG:paramiko.transport:Compression: none
+2024-03-06 10:51:15:DEBUG:paramiko.transport:=== End of kex handshake ===
+2024-03-06 10:51:16:DEBUG:paramiko.transport:kex engine KexCurve25519 specified hash_algo <built-in function openssl_sha256>
+2024-03-06 10:51:16:DEBUG:paramiko.transport:Switch to new keys ...
+2024-03-06 10:51:16:DEBUG:paramiko.transport:Adding ssh-ed25519 host key for DEWET-EMEA-FS1.eu.hexagonmetrology.com: b'ae1703bda6cb6b8fb5a978a4a1b0db7f'
+2024-03-06 10:51:16:DEBUG:paramiko.transport:Got EXT_INFO: {'server-sig-algs': b'ssh-ed25519,ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521'}
+2024-03-06 10:51:17:DEBUG:paramiko.transport:Trying discovered key b'87f0586fdbda2eeec56cbfdc51ac2858' in C:\Users\ben.thornton/.ssh/id_ed25519
+2024-03-06 10:51:17:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:51:18:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:51:18:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:51:22:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:51:22:DEBUG:paramiko.transport:[chan 0] Max packet in: 32768 bytes
+2024-03-06 10:51:23:DEBUG:paramiko.transport:Received global request "hostkeys-00@openssh.com"
+2024-03-06 10:51:23:DEBUG:paramiko.transport:Rejecting "hostkeys-00@openssh.com" global request from server.
+2024-03-06 10:51:23:DEBUG:paramiko.transport:[chan 0] Max packet out: 32768 bytes
+2024-03-06 10:51:23:DEBUG:paramiko.transport:Secsh channel 0 opened.
+2024-03-06 10:51:23:DEBUG:paramiko.transport:[chan 0] Sesch channel 0 request ok
+2024-03-06 10:51:23:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:51:23:DEBUG:paramiko.transport:[chan 1] Max packet in: 32768 bytes
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 1] Max packet out: 32768 bytes
+2024-03-06 10:51:24:DEBUG:paramiko.transport:Secsh channel 1 opened.
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 1] Sesch channel 1 request ok
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 1] EOF sent (1)
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 1] EOF received (1)
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 2] Max packet in: 32768 bytes
+2024-03-06 10:51:24:DEBUG:paramiko.transport:[chan 2] Max packet out: 32768 bytes
+2024-03-06 10:51:24:DEBUG:paramiko.transport:Secsh channel 2 opened.
+2024-03-06 10:51:25:DEBUG:paramiko.transport:[chan 2] Sesch channel 2 request ok
+2024-03-06 10:51:25:DEBUG:paramiko.transport:[chan 2] EOF received (2)
+2024-03-06 10:51:25:DEBUG:paramiko.transport:[chan 2] EOF sent (2)
+2024-03-06 10:51:25:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.cDvm/test.acf', 'wb')
+2024-03-06 10:51:25:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.cDvm/test.acf', 'wb') -> 00000000
+2024-03-06 10:51:25:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:51:26:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.cDvm/test.acf')
+2024-03-06 10:51:26:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.cDvm/test.adm', 'wb')
+2024-03-06 10:51:26:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.cDvm/test.adm', 'wb') -> 00000000
+2024-03-06 10:51:26:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:51:27:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.cDvm/test.adm')
+2024-03-06 10:51:27:DEBUG:paramiko.transport:[chan 3] Max packet in: 32768 bytes
+2024-03-06 10:51:27:DEBUG:paramiko.transport:[chan 3] Max packet out: 32768 bytes
+2024-03-06 10:51:27:DEBUG:paramiko.transport:Secsh channel 3 opened.
+2024-03-06 10:51:27:DEBUG:paramiko.transport:[chan 3] Sesch channel 3 request ok
+2024-03-06 10:51:28:DEBUG:paramiko.transport:[chan 3] EOF received (3)
+2024-03-06 10:51:28:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:51:28:DEBUG:paramiko.transport:[chan 3] EOF sent (3)
+2024-03-06 10:51:28:DEBUG:paramiko.transport:Dropping user packet because connection is dead.
+2024-03-06 10:52:52:INFO:aview_hpc._cli:Arguments: {'log_level': 'DEBUG', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading KWallet
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading SecretService
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading Windows
+2024-03-06 10:52:52:DEBUG:win32ctypes.core.cffi:Loaded cffi backend
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading chainer
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading libsecret
+2024-03-06 10:52:52:DEBUG:keyring.backend:Loading macOS
+2024-03-06 10:52:52:DEBUG:paramiko.transport:starting thread (client mode): 0x99e2ed10
+2024-03-06 10:52:52:DEBUG:paramiko.transport:Local version/idstring: SSH-2.0-paramiko_3.2.0
+2024-03-06 10:52:52:DEBUG:paramiko.transport:Remote version/idstring: SSH-2.0-OpenSSH_8.0
+2024-03-06 10:52:52:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:52:52:DEBUG:paramiko.transport:=== Key exchange possibilities ===
+2024-03-06 10:52:52:DEBUG:paramiko.transport:kex algos: curve25519-sha256, curve25519-sha256@libssh.org, ecdh-sha2-nistp256, ecdh-sha2-nistp384, ecdh-sha2-nistp521, diffie-hellman-group-exchange-sha256, diffie-hellman-group14-sha256, diffie-hellman-group16-sha512, diffie-hellman-group18-sha512, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha1
+2024-03-06 10:52:52:DEBUG:paramiko.transport:server key: rsa-sha2-512, rsa-sha2-256, ssh-rsa, ecdsa-sha2-nistp256, ssh-ed25519
+2024-03-06 10:52:52:DEBUG:paramiko.transport:client encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:52:52:DEBUG:paramiko.transport:server encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:52:52:DEBUG:paramiko.transport:client mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:52:52:DEBUG:paramiko.transport:server mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:52:52:DEBUG:paramiko.transport:client compress: none, zlib@openssh.com
+2024-03-06 10:52:52:DEBUG:paramiko.transport:server compress: none, zlib@openssh.com
+2024-03-06 10:52:52:DEBUG:paramiko.transport:client lang: <none>
+2024-03-06 10:52:52:DEBUG:paramiko.transport:server lang: <none>
+2024-03-06 10:52:52:DEBUG:paramiko.transport:kex follows: False
+2024-03-06 10:52:52:DEBUG:paramiko.transport:=== Key exchange agreements ===
+2024-03-06 10:52:52:DEBUG:paramiko.transport:Kex: curve25519-sha256@libssh.org
+2024-03-06 10:52:52:DEBUG:paramiko.transport:HostKey: ssh-ed25519
+2024-03-06 10:52:52:DEBUG:paramiko.transport:Cipher: aes128-ctr
+2024-03-06 10:52:52:DEBUG:paramiko.transport:MAC: hmac-sha2-256
+2024-03-06 10:52:52:DEBUG:paramiko.transport:Compression: none
+2024-03-06 10:52:52:DEBUG:paramiko.transport:=== End of kex handshake ===
+2024-03-06 10:52:53:DEBUG:paramiko.transport:kex engine KexCurve25519 specified hash_algo <built-in function openssl_sha256>
+2024-03-06 10:52:53:DEBUG:paramiko.transport:Switch to new keys ...
+2024-03-06 10:52:53:DEBUG:paramiko.transport:Adding ssh-ed25519 host key for DEWET-EMEA-FS1.eu.hexagonmetrology.com: b'ae1703bda6cb6b8fb5a978a4a1b0db7f'
+2024-03-06 10:52:53:DEBUG:paramiko.transport:Got EXT_INFO: {'server-sig-algs': b'ssh-ed25519,ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521'}
+2024-03-06 10:52:53:DEBUG:paramiko.transport:Trying discovered key b'87f0586fdbda2eeec56cbfdc51ac2858' in C:\Users\ben.thornton/.ssh/id_ed25519
+2024-03-06 10:52:54:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:52:54:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:52:55:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:53:02:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:53:02:DEBUG:paramiko.transport:[chan 0] Max packet in: 32768 bytes
+2024-03-06 10:53:02:DEBUG:paramiko.transport:Received global request "hostkeys-00@openssh.com"
+2024-03-06 10:53:02:DEBUG:paramiko.transport:Rejecting "hostkeys-00@openssh.com" global request from server.
+2024-03-06 10:53:03:DEBUG:paramiko.transport:[chan 0] Max packet out: 32768 bytes
+2024-03-06 10:53:03:DEBUG:paramiko.transport:Secsh channel 0 opened.
+2024-03-06 10:53:03:DEBUG:paramiko.transport:[chan 0] Sesch channel 0 request ok
+2024-03-06 10:53:03:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:53:03:DEBUG:paramiko.transport:[chan 1] Max packet in: 32768 bytes
+2024-03-06 10:53:03:DEBUG:paramiko.transport:[chan 1] Max packet out: 32768 bytes
+2024-03-06 10:53:03:DEBUG:paramiko.transport:Secsh channel 1 opened.
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 1] Sesch channel 1 request ok
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 1] EOF sent (1)
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 1] EOF received (1)
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 2] Max packet in: 32768 bytes
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 2] Max packet out: 32768 bytes
+2024-03-06 10:53:04:DEBUG:paramiko.transport:Secsh channel 2 opened.
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 2] Sesch channel 2 request ok
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 2] EOF received (2)
+2024-03-06 10:53:04:DEBUG:paramiko.transport:[chan 2] EOF sent (2)
+2024-03-06 10:53:04:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.s8VL/test.acf', 'wb')
+2024-03-06 10:53:05:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.s8VL/test.acf', 'wb') -> 00000000
+2024-03-06 10:53:05:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:53:05:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.s8VL/test.acf')
+2024-03-06 10:53:06:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.s8VL/test.adm', 'wb')
+2024-03-06 10:53:06:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.s8VL/test.adm', 'wb') -> 00000000
+2024-03-06 10:53:06:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:53:06:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.s8VL/test.adm')
+2024-03-06 10:53:07:DEBUG:paramiko.transport:[chan 3] Max packet in: 32768 bytes
+2024-03-06 10:53:07:DEBUG:paramiko.transport:[chan 3] Max packet out: 32768 bytes
+2024-03-06 10:53:07:DEBUG:paramiko.transport:Secsh channel 3 opened.
+2024-03-06 10:53:07:DEBUG:paramiko.transport:[chan 3] Sesch channel 3 request ok
+2024-03-06 10:53:07:DEBUG:paramiko.transport:[chan 3] EOF received (3)
+2024-03-06 10:53:07:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 10:53:07:DEBUG:paramiko.transport:[chan 3] EOF sent (3)
+2024-03-06 10:53:07:DEBUG:paramiko.transport:Dropping user packet because connection is dead.
+2024-03-06 10:57:32:INFO:aview_hpc._cli:Arguments: {'log_level': 'DEBUG', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading KWallet
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading SecretService
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading Windows
+2024-03-06 10:57:32:DEBUG:win32ctypes.core.cffi:Loaded cffi backend
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading chainer
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading libsecret
+2024-03-06 10:57:32:DEBUG:keyring.backend:Loading macOS
+2024-03-06 10:57:33:DEBUG:paramiko.transport:starting thread (client mode): 0x4f0bed10
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Local version/idstring: SSH-2.0-paramiko_3.2.0
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Remote version/idstring: SSH-2.0-OpenSSH_8.0
+2024-03-06 10:57:33:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 10:57:33:DEBUG:paramiko.transport:=== Key exchange possibilities ===
+2024-03-06 10:57:33:DEBUG:paramiko.transport:kex algos: curve25519-sha256, curve25519-sha256@libssh.org, ecdh-sha2-nistp256, ecdh-sha2-nistp384, ecdh-sha2-nistp521, diffie-hellman-group-exchange-sha256, diffie-hellman-group14-sha256, diffie-hellman-group16-sha512, diffie-hellman-group18-sha512, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha1
+2024-03-06 10:57:33:DEBUG:paramiko.transport:server key: rsa-sha2-512, rsa-sha2-256, ssh-rsa, ecdsa-sha2-nistp256, ssh-ed25519
+2024-03-06 10:57:33:DEBUG:paramiko.transport:client encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:57:33:DEBUG:paramiko.transport:server encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 10:57:33:DEBUG:paramiko.transport:client mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:57:33:DEBUG:paramiko.transport:server mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 10:57:33:DEBUG:paramiko.transport:client compress: none, zlib@openssh.com
+2024-03-06 10:57:33:DEBUG:paramiko.transport:server compress: none, zlib@openssh.com
+2024-03-06 10:57:33:DEBUG:paramiko.transport:client lang: <none>
+2024-03-06 10:57:33:DEBUG:paramiko.transport:server lang: <none>
+2024-03-06 10:57:33:DEBUG:paramiko.transport:kex follows: False
+2024-03-06 10:57:33:DEBUG:paramiko.transport:=== Key exchange agreements ===
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Kex: curve25519-sha256@libssh.org
+2024-03-06 10:57:33:DEBUG:paramiko.transport:HostKey: ssh-ed25519
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Cipher: aes128-ctr
+2024-03-06 10:57:33:DEBUG:paramiko.transport:MAC: hmac-sha2-256
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Compression: none
+2024-03-06 10:57:33:DEBUG:paramiko.transport:=== End of kex handshake ===
+2024-03-06 10:57:33:DEBUG:paramiko.transport:kex engine KexCurve25519 specified hash_algo <built-in function openssl_sha256>
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Switch to new keys ...
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Got EXT_INFO: {'server-sig-algs': b'ssh-ed25519,ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521'}
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Adding ssh-ed25519 host key for DEWET-EMEA-FS1.eu.hexagonmetrology.com: b'ae1703bda6cb6b8fb5a978a4a1b0db7f'
+2024-03-06 10:57:33:DEBUG:paramiko.transport:Trying discovered key b'87f0586fdbda2eeec56cbfdc51ac2858' in C:\Users\ben.thornton/.ssh/id_ed25519
+2024-03-06 10:57:34:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:57:34:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 10:57:35:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 10:57:42:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 10:57:42:DEBUG:paramiko.transport:[chan 0] Max packet in: 32768 bytes
+2024-03-06 10:57:42:DEBUG:paramiko.transport:Received global request "hostkeys-00@openssh.com"
+2024-03-06 10:57:42:DEBUG:paramiko.transport:Rejecting "hostkeys-00@openssh.com" global request from server.
+2024-03-06 10:57:43:DEBUG:paramiko.transport:[chan 0] Max packet out: 32768 bytes
+2024-03-06 10:57:43:DEBUG:paramiko.transport:Secsh channel 0 opened.
+2024-03-06 10:57:43:DEBUG:paramiko.transport:[chan 0] Sesch channel 0 request ok
+2024-03-06 10:57:43:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:`get_results` called with the following arguments:
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   acf_file: C:\Users\ben.thornton\code\aview_hpc\test\models\test.acf
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   adm_file: C:\Users\ben.thornton\code\aview_hpc\test\models\test.adm
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   aux_files: None
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   mins: None
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   tmp_dir: None
+2024-03-06 10:57:43:DEBUG:aview_hpc._cli:   _ignore_resubmit: False
+2024-03-06 10:57:43:DEBUG:paramiko.transport:[chan 1] Max packet in: 32768 bytes
+2024-03-06 10:57:43:DEBUG:paramiko.transport:[chan 1] Max packet out: 32768 bytes
+2024-03-06 10:57:43:DEBUG:paramiko.transport:Secsh channel 1 opened.
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 1] Sesch channel 1 request ok
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 1] EOF sent (1)
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 1] EOF received (1)
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 2] Max packet in: 32768 bytes
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 2] Max packet out: 32768 bytes
+2024-03-06 10:57:44:DEBUG:paramiko.transport:Secsh channel 2 opened.
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 2] Sesch channel 2 request ok
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 2] EOF received (2)
+2024-03-06 10:57:44:DEBUG:paramiko.transport:[chan 2] EOF sent (2)
+2024-03-06 10:57:44:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.g1ty/test.acf', 'wb')
+2024-03-06 10:57:45:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.g1ty/test.acf', 'wb') -> 00000000
+2024-03-06 10:57:45:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:57:45:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.g1ty/test.acf')
+2024-03-06 10:57:46:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.g1ty/test.adm', 'wb')
+2024-03-06 10:57:46:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.g1ty/test.adm', 'wb') -> 00000000
+2024-03-06 10:57:46:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 10:57:46:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.g1ty/test.adm')
+2024-03-06 10:57:47:DEBUG:paramiko.transport:[chan 3] Max packet in: 32768 bytes
+2024-03-06 10:57:47:DEBUG:paramiko.transport:[chan 3] Max packet out: 32768 bytes
+2024-03-06 10:57:47:DEBUG:paramiko.transport:Secsh channel 3 opened.
+2024-03-06 10:57:47:DEBUG:paramiko.transport:[chan 3] Sesch channel 3 request ok
+2024-03-06 10:57:47:DEBUG:paramiko.transport:[chan 3] EOF received (3)
+2024-03-06 10:57:47:DEBUG:paramiko.transport:[chan 3] EOF sent (3)
+2024-03-06 10:57:47:DEBUG:paramiko.transport:EOF in transport thread
+2024-03-06 10:57:47:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-06 11:08:44:INFO:aview_hpc._cli:Arguments: {'log_level': 'DEBUG', 'command': 'submit', 'acf_file': WindowsPath('test.acf'), 'adm_file': WindowsPath('test.adm'), 'aux_files': None, 'mins': None}
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading KWallet
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading SecretService
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading Windows
+2024-03-06 11:08:44:DEBUG:win32ctypes.core.cffi:Loaded cffi backend
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading chainer
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading libsecret
+2024-03-06 11:08:44:DEBUG:keyring.backend:Loading macOS
+2024-03-06 11:08:44:DEBUG:paramiko.transport:starting thread (client mode): 0xe73ded70
+2024-03-06 11:08:44:DEBUG:paramiko.transport:Local version/idstring: SSH-2.0-paramiko_3.2.0
+2024-03-06 11:08:44:DEBUG:paramiko.transport:Remote version/idstring: SSH-2.0-OpenSSH_8.0
+2024-03-06 11:08:44:INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_8.0)
+2024-03-06 11:08:45:DEBUG:paramiko.transport:=== Key exchange possibilities ===
+2024-03-06 11:08:45:DEBUG:paramiko.transport:kex algos: curve25519-sha256, curve25519-sha256@libssh.org, ecdh-sha2-nistp256, ecdh-sha2-nistp384, ecdh-sha2-nistp521, diffie-hellman-group-exchange-sha256, diffie-hellman-group14-sha256, diffie-hellman-group16-sha512, diffie-hellman-group18-sha512, diffie-hellman-group-exchange-sha1, diffie-hellman-group14-sha1
+2024-03-06 11:08:45:DEBUG:paramiko.transport:server key: rsa-sha2-512, rsa-sha2-256, ssh-rsa, ecdsa-sha2-nistp256, ssh-ed25519
+2024-03-06 11:08:45:DEBUG:paramiko.transport:client encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 11:08:45:DEBUG:paramiko.transport:server encrypt: aes256-gcm@openssh.com, chacha20-poly1305@openssh.com, aes256-ctr, aes256-cbc, aes128-gcm@openssh.com, aes128-ctr, aes128-cbc
+2024-03-06 11:08:45:DEBUG:paramiko.transport:client mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 11:08:45:DEBUG:paramiko.transport:server mac: hmac-sha2-256-etm@openssh.com, hmac-sha1-etm@openssh.com, umac-128-etm@openssh.com, hmac-sha2-512-etm@openssh.com, hmac-sha2-256, hmac-sha1, umac-128@openssh.com, hmac-sha2-512
+2024-03-06 11:08:45:DEBUG:paramiko.transport:client compress: none, zlib@openssh.com
+2024-03-06 11:08:45:DEBUG:paramiko.transport:server compress: none, zlib@openssh.com
+2024-03-06 11:08:45:DEBUG:paramiko.transport:client lang: <none>
+2024-03-06 11:08:45:DEBUG:paramiko.transport:server lang: <none>
+2024-03-06 11:08:45:DEBUG:paramiko.transport:kex follows: False
+2024-03-06 11:08:45:DEBUG:paramiko.transport:=== Key exchange agreements ===
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Kex: curve25519-sha256@libssh.org
+2024-03-06 11:08:45:DEBUG:paramiko.transport:HostKey: ssh-ed25519
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Cipher: aes128-ctr
+2024-03-06 11:08:45:DEBUG:paramiko.transport:MAC: hmac-sha2-256
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Compression: none
+2024-03-06 11:08:45:DEBUG:paramiko.transport:=== End of kex handshake ===
+2024-03-06 11:08:45:DEBUG:paramiko.transport:kex engine KexCurve25519 specified hash_algo <built-in function openssl_sha256>
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Switch to new keys ...
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Adding ssh-ed25519 host key for DEWET-EMEA-FS1.eu.hexagonmetrology.com: b'ae1703bda6cb6b8fb5a978a4a1b0db7f'
+2024-03-06 11:08:45:DEBUG:paramiko.transport:Got EXT_INFO: {'server-sig-algs': b'ssh-ed25519,ssh-rsa,rsa-sha2-256,rsa-sha2-512,ssh-dss,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521'}
+2024-03-06 11:08:46:DEBUG:paramiko.transport:Trying discovered key b'87f0586fdbda2eeec56cbfdc51ac2858' in C:\Users\ben.thornton/.ssh/id_ed25519
+2024-03-06 11:08:46:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 11:08:48:INFO:paramiko.transport:Authentication (publickey) failed.
+2024-03-06 11:08:48:DEBUG:paramiko.transport:userauth is OK
+2024-03-06 11:08:53:INFO:paramiko.transport:Authentication (password) successful!
+2024-03-06 11:08:53:DEBUG:paramiko.transport:[chan 0] Max packet in: 32768 bytes
+2024-03-06 11:08:53:DEBUG:paramiko.transport:Received global request "hostkeys-00@openssh.com"
+2024-03-06 11:08:53:DEBUG:paramiko.transport:Rejecting "hostkeys-00@openssh.com" global request from server.
+2024-03-06 11:08:54:DEBUG:paramiko.transport:[chan 0] Max packet out: 32768 bytes
+2024-03-06 11:08:54:DEBUG:paramiko.transport:Secsh channel 0 opened.
+2024-03-06 11:08:54:DEBUG:paramiko.transport:[chan 0] Sesch channel 0 request ok
+2024-03-06 11:08:54:INFO:paramiko.transport.sftp:[chan 0] Opened sftp connection (server version 3)
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:`get_results` called with the following arguments:
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   acf_file: C:\Users\ben.thornton\code\aview_hpc\test\models\test.acf
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   adm_file: C:\Users\ben.thornton\code\aview_hpc\test\models\test.adm
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   aux_files: None
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   mins: None
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   tmp_dir: None
+2024-03-06 11:08:54:DEBUG:aview_hpc._cli:   _ignore_resubmit: False
+2024-03-06 11:08:54:DEBUG:paramiko.transport:[chan 1] Max packet in: 32768 bytes
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 1] Max packet out: 32768 bytes
+2024-03-06 11:08:55:DEBUG:paramiko.transport:Secsh channel 1 opened.
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 1] Sesch channel 1 request ok
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 1] EOF sent (1)
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 1] EOF received (1)
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 2] Max packet in: 32768 bytes
+2024-03-06 11:08:55:DEBUG:paramiko.transport:[chan 2] Max packet out: 32768 bytes
+2024-03-06 11:08:55:DEBUG:paramiko.transport:Secsh channel 2 opened.
+2024-03-06 11:08:56:DEBUG:paramiko.transport:[chan 2] Sesch channel 2 request ok
+2024-03-06 11:08:56:DEBUG:paramiko.transport:[chan 2] EOF received (2)
+2024-03-06 11:08:56:DEBUG:paramiko.transport:[chan 2] EOF sent (2)
+2024-03-06 11:08:56:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.DyDw/test.acf', 'wb')
+2024-03-06 11:08:57:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.DyDw/test.acf', 'wb') -> 00000000
+2024-03-06 11:08:57:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 11:08:57:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.DyDw/test.acf')
+2024-03-06 11:08:57:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.DyDw/test.adm', 'wb')
+2024-03-06 11:08:58:DEBUG:paramiko.transport.sftp:[chan 0] open(b'/home/ben.thornton/.tmp/test.DyDw/test.adm', 'wb') -> 00000000
+2024-03-06 11:08:58:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
+2024-03-06 11:08:58:DEBUG:paramiko.transport.sftp:[chan 0] stat(b'/home/ben.thornton/.tmp/test.DyDw/test.adm')
+2024-03-06 11:08:59:DEBUG:paramiko.transport:[chan 3] Max packet in: 32768 bytes
+2024-03-06 11:08:59:DEBUG:paramiko.transport:[chan 3] Max packet out: 32768 bytes
+2024-03-06 11:08:59:DEBUG:paramiko.transport:Secsh channel 3 opened.
+2024-03-06 11:08:59:DEBUG:paramiko.transport:[chan 3] Sesch channel 3 request ok
+2024-03-06 11:08:59:DEBUG:paramiko.transport:[chan 3] EOF received (3)
+2024-03-06 11:08:59:DEBUG:paramiko.transport:[chan 3] EOF sent (3)
+2024-03-06 11:08:59:DEBUG:paramiko.transport:EOF in transport thread
+2024-03-06 11:08:59:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.

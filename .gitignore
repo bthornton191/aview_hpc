@@ -1,0 +1,8 @@
+.vscode/settings.json
+sandbox.ipynb
+env
+build
+aview_hpc.egg-info
+dist
+**.exe
+**/__pycache__
