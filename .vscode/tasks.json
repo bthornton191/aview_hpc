@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "freeze_main",
+            "command": "${workspaceFolder}\\env\\Scripts\\activate.bat & pyinstaller --noconfirm main.spec & mv ${workspaceFolder}\\dist\\main.exe ${workspaceFolder}\\aview_hpc\\main.exe",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

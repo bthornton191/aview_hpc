@@ -1,0 +1,57 @@
+Adams View model name: MODEL_1
+!
+!-------------------------------- SYSTEM UNITS ---------------------------------
+!
+UNITS/
+, FORCE = POUND_FORCE
+, MASS = POUND_MASS
+, LENGTH = INCH
+, TIME = SECOND
+!
+!----------------------------------- PARTS -------------------------------------
+!
+!----------------------------------- Ground ------------------------------------
+!
+!                            adams_view_name='ground'
+PART/1
+, GROUND
+!
+!------------------------------------ Part -------------------------------------
+!
+!                            adams_view_name='PART_2'
+PART/2
+, MASS = 1785.26025
+, CM = 2
+, IP = 94083.40334, 94083.40334, 94083.40334
+!
+!                           adams_view_name='MARKER_1'
+MARKER/1
+, PART = 2
+!
+!                              adams_view_name='cm'
+MARKER/2
+, PART = 2
+!
+!                         adams_view_name='ELLIPSOID_1'
+GRAPHICS/1
+, ELLIPSOID
+, CM = 1
+, XSCALE = 22.95650352
+, YSCALE = 22.95650352
+, ZSCALE = 22.95650352
+!
+!------------------------- GRAVITATIONAL ACCELERATION --------------------------
+!
+ACCGRAV/
+, JGRAV = -386.0885827
+!
+!----------------------------- ANALYSIS SETTINGS -------------------------------
+!
+OUTPUT/
+, REQSAVE
+, GRSAVE
+!
+RESULTS/
+, XRF
+!
+END
