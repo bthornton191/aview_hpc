@@ -9,7 +9,7 @@ import keyring
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
 from .get_binary import get_binary
-from ._cli import main()
+from ._cli import main
 
 BINARY = get_binary()
 
