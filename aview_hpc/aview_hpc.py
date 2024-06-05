@@ -1,12 +1,14 @@
 import datetime
 import json
 import subprocess
-import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
+from aview_hpc.get_binary import get_binary
+
+BINARY = get_binary()
 
 
 def submit(acf_file: Path,
@@ -34,7 +36,7 @@ def submit(acf_file: Path,
     job_id : int
         The job ID
     """
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    cmd = [str(BINARY)]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -111,7 +113,7 @@ def submit_multi(acf_files: List[Path],
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
 
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    cmd = [str(BINARY)]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -214,7 +216,7 @@ def check_if_finished_and_get_errors(remote_dir: Path,
 
 
 def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Path]]]:
-    cmd = [str(Path(__file__).parent / 'main.exe'), 'get_remote_dir_status', remote_dir.as_posix()]
+    cmd = [str(BINARY), 'get_remote_dir_status', remote_dir.as_posix()]
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -263,7 +265,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     List[Path]
         A list of paths to the downloaded files
     """
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    cmd = [str(BINARY)]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])

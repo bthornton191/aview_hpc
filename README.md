@@ -5,6 +5,9 @@ Submit simulations to an HPC cluster directly from Adams View!
 > [!WARNING]
 > Many features currently only work with the [slurm](https://slurm.schedmd.com/) job scheduler.
 
+> [!WARNING]
+> Currently supports Windows only.
+
 ## Installation
 
 Install using pip:
@@ -12,9 +15,10 @@ Install using pip:
 pip install git+https://github.com/bthornton191/aview_hpc
 ```
 
-> [!IMPORTANT]
-> pip will not install the binary. Download the binary [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/main.exe)
-> and place it inside the `aview_hpc` package directory. 
+The package requires a binary file that will not be installed by pip. This will be automatically 
+downloaded the first time Download the binary 
+[here](https://github.com/bthornton191/aview_hpc/releases/latest/download/aview_hpc.exe)
+and place it inside the `aview_hpc` package directory. 
 
 
 ## Configuration
@@ -60,7 +64,7 @@ cd aview_hpc
 python -m virtualenv env
 env\Scripts\activate.bat
 pip install -r requirements.txt
-pyinstaller --noconfirm main.spec & mv dist\main.exe aview_hpc\main.exe
+freeze.bat
 ```
 
 ### Testing
