@@ -9,7 +9,6 @@ from aview_hpc._cli import submit_multi
 sys.path.append(str(Path(__file__).parent.parent))
 
 from aview_hpc._cli import get_config, get_results, submit, get_remote_dir_status  # noqa
-from aview_hpc.aview_hpc import check_if_finished  # noqa
 
 TEST_ACF = Path(__file__).parent / 'models/test.acf'
 TEST_ADM = Path(__file__).parent / 'models/test.adm'
