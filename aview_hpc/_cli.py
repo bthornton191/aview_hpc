@@ -16,7 +16,6 @@ from tempfile import TemporaryDirectory
 from typing import Dict, Generator, List, Type, Union
 
 import keyring
-from more_itertools import last
 import pandas as pd
 from paramiko import AutoAddPolicy, SSHClient, SSHException
 
@@ -49,11 +48,13 @@ class HPCSession():
                  job_name: str = None,
                  job_id: int = None,
                  remote_dir: Path = None,
-                 remote_tempdir: Path = None):
+                 remote_tempdir: Path = None,
+                 submit_cmd: str = None):
 
         config = get_config()
         self.host = host or config.get('host', None)
         self.username = username or config.get('username', None)
+        self.submit_cmd = submit_cmd or config.get('submit_cmd', None)
 
         self.remote_tempdir = remote_tempdir or config.get('remote_tempdir', None)
         if self.remote_tempdir is not None:
@@ -123,9 +124,9 @@ class HPCSession():
                acf_file: Path,
                adm_file: Path = None,
                aux_files: List[Path] = None,
-               mins: int = None,
                tmp_dir: Path = None,
-               _ignore_resubmit=False):
+               _ignore_resubmit=False,
+               **kwargs):
         """Submit an ACF file to the cluster
 
         Parameters
@@ -135,13 +136,14 @@ class HPCSession():
         adm_file : Path, optional
             The path to the ADM file to submit, by default None
         """
-        LOG.debug('`get_results` called with the following arguments:')
+        LOG.debug('`submit` called with the following arguments:')
         LOG.debug(f'   acf_file: {acf_file}')
         LOG.debug(f'   adm_file: {adm_file}')
         LOG.debug(f'   aux_files: {aux_files}')
-        LOG.debug(f'   mins: {mins}')
         LOG.debug(f'   tmp_dir: {tmp_dir}')
         LOG.debug(f'   _ignore_resubmit: {_ignore_resubmit}')
+        for k, v in kwargs.items():
+            LOG.debug(f'   {k}: {v}')
 
         if self.job_name is not None and not _ignore_resubmit:
             raise RuntimeError('Please instantiate a new object to submit another job.')
@@ -192,11 +194,14 @@ class HPCSession():
                              f'--> {remote_file}')
                     self.ssh.exec_command(f'cp {self.uploaded_files[local_file]} {remote_file}')
 
-        # TODO: Make this command configurable
-        cmd = ['~/scripts/asub.py',
+        cmd = [self.submit_cmd,
                (self.remote_dir / acf_file.name).as_posix()]
-        if mins:
-            cmd += ['--mins', str(mins)]
+
+        for k, v in kwargs.items():
+            if v:
+                cmd += [f'--{k}', str(v)]
+            else:
+                cmd += [f'--{k}']
 
         LOG.info('Running: ' + ' '.join(cmd))
         _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
