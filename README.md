@@ -42,7 +42,7 @@ python -m keyring set aview_hpc <user>
 ```
 This will prompt you to enter your hpc password.
 
-### Submit Command
+### submit_cmd
 
 The submit command **MUST** 
 
@@ -54,6 +54,30 @@ This likely means you will need a custom submission script. See [slurm.py](hpc_s
 > [!TIP]
 > The submit command can take any arbitrary keyword arguments.
 
+## Usage
+
+### Submitting a Job within Adams View
+
+1. Write the acf and adm files for the simulation.
+2. Run the following
+```python
+from aview_hpc import submit
+from pathlib import Path
+
+submit(
+    ## Required, path to the acf file
+    acf=Path('path/to/model.acf'),
+    
+    ## Optional, leave commented to determine the adm from the acf
+    # adm=Path('path/to/model.adm'), 
+    
+    ## Optional, additional files to copy to the HPC cluster (e.g. dll, xmt, etc)
+    # aux_files=[], 
+
+    ## Optional, any additional keyword arguments to pass to the hpc submit command
+    # mins=120
+)
+```
 
 ## Development
 
