@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc.aview_hpc import check_if_finished, submit, get_results, get_remote_dir_status  # noqa
+from aview_hpc.aview_hpc import submit, get_results, get_remote_dir_status  # noqa
 from aview_hpc._cli import submit as submit_cli  # noqa
 
 TEST_ACF = Path(__file__).parent / 'models/test.acf'
@@ -68,5 +68,6 @@ class TestGetRemoteDirStatus(unittest.TestCase):
                                'owner',
                                'group',
                                'size',
-                               'modified'],
+                               'modified',
+                               'file'],
                               status[0].keys())

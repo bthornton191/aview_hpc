@@ -5,6 +5,9 @@ Submit simulations to an HPC cluster directly from Adams View!
 > [!WARNING]
 > Many features currently only work with the [slurm](https://slurm.schedmd.com/) job scheduler.
 
+> [!WARNING]
+> Currently supports Windows only.
+
 ## Installation
 
 Install using pip:
@@ -12,9 +15,10 @@ Install using pip:
 pip install git+https://github.com/bthornton191/aview_hpc
 ```
 
-> [!IMPORTANT]
-> pip will not install the binary. Download the binary [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/main.exe)
-> and place it inside the `aview_hpc` package directory. 
+The package requires a binary file that will not be installed by pip. This will be automatically 
+downloaded the first time Download the binary 
+[here](https://github.com/bthornton191/aview_hpc/releases/latest/download/aview_hpc.exe)
+and place it inside the `aview_hpc` package directory. 
 
 
 ## Configuration
@@ -38,7 +42,7 @@ python -m keyring set aview_hpc <user>
 ```
 This will prompt you to enter your hpc password.
 
-### Submit Command
+### submit_cmd
 
 The submit command **MUST** 
 
@@ -50,6 +54,30 @@ This likely means you will need a custom submission script. See [slurm.py](hpc_s
 > [!TIP]
 > The submit command can take any arbitrary keyword arguments.
 
+## Usage
+
+### Submitting a Job within Adams View
+
+1. Write the acf and adm files for the simulation.
+2. Run the following
+```python
+from aview_hpc import submit
+from pathlib import Path
+
+submit(
+    ## Required, path to the acf file
+    acf=Path('path/to/model.acf'),
+    
+    ## Optional, leave commented to determine the adm from the acf
+    # adm=Path('path/to/model.adm'), 
+    
+    ## Optional, additional files to copy to the HPC cluster (e.g. dll, xmt, etc)
+    # aux_files=[], 
+
+    ## Optional, any additional keyword arguments to pass to the hpc submit command
+    # mins=120
+)
+```
 
 ## Development
 
@@ -60,7 +88,7 @@ cd aview_hpc
 python -m virtualenv env
 env\Scripts\activate.bat
 pip install -r requirements.txt
-pyinstaller --noconfirm main.spec & mv dist\main.exe aview_hpc\main.exe
+freeze.bat
 ```
 
 ### Testing

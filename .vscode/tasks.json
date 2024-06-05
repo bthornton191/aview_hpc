@@ -4,7 +4,7 @@
         {
             "type": "shell",
             "label": "freeze_main",
-            "command": "${workspaceFolder}\\env\\Scripts\\activate.bat & pyinstaller --noconfirm main.spec & mv ${workspaceFolder}\\dist\\main.exe ${workspaceFolder}\\aview_hpc\\main.exe",
+            "command": "${workspaceFolder}\\env\\Scripts\\activate.bat & ${workspaceFolder}\\freeze.bat",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

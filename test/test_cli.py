@@ -1,15 +1,18 @@
+import json
+from pickle import loads
 import sys
 import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-
-from aview_hpc._cli import submit_multi
+from io import StringIO
+from unittest.mock import patch
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc._cli import get_config, get_results, submit, get_remote_dir_status  # noqa
-from aview_hpc.aview_hpc import check_if_finished  # noqa
+from aview_hpc._cli import get_config, get_remote_dir_status, get_results  # noqa
+from aview_hpc._cli import main as cli_main  # noqa
+from aview_hpc._cli import submit, submit_multi  # noqa
 
 TEST_ACF = Path(__file__).parent / 'models/test.acf'
 TEST_ADM = Path(__file__).parent / 'models/test.adm'
@@ -49,6 +52,14 @@ class TestSubmit(unittest.TestCase):
         self.assertIsNotNone(remote_dir)
         self.assertIsNotNone(job_name)
         self.assertIsNotNone(job_id)
+
+    def test_submit_cli(self):
+        sys.argv[1:] = ['submit', str(TEST_ACF), '--adm_file', str(TEST_ADM), '--mins', '10']
+        with patch('sys.stdout', new=StringIO()) as fakeOutput:
+            cli_main()
+            output = json.loads(fakeOutput.getvalue().splitlines()[-1])
+
+        self.assertListEqual(['remote_dir', 'job_name', 'job_id'], list(output))
 
 
 class TestGetResults(unittest.TestCase):

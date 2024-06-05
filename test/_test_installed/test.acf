@@ -1,0 +1,5 @@
+
+file/model=test
+! Insert ACF commands here:
+SIMULATE/DYNAMIC, END=1.0, DTOUT=1.0E-02
+stop
