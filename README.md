@@ -9,11 +9,12 @@ Submit simulations to an HPC cluster directly from Adams View!
 
 First, install the `aview_hpc` package on your local machine:
 ```shell
-python -m pip install git+https://github.com/bthornton191/aview_hpc
+pip install git+https://github.com/bthornton191/aview_hpc
 ```
 
-This will not install the binary. Download the binary [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/main.exe)
-and place it inside the `aview_hpc` package directory. 
+> [!IMPORTANT]
+> This will not install the binary. Download the binary [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/main.exe)
+> and place it inside the `aview_hpc` package directory. 
 
 
 ## Configuration
