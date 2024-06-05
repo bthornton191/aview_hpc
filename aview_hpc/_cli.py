@@ -197,10 +197,7 @@ class HPCSession():
                (self.remote_dir / acf_file.name).as_posix()]
 
         for k, v in kwargs.items():
-            if v:
-                cmd += [f'--{k}', str(v)]
-            else:
-                cmd += [f'--{k}']
+            cmd += [f'--{k}', str(v)]
 
         LOG.info('Running: ' + ' '.join(cmd))
         _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
@@ -399,10 +396,10 @@ def hpc_session(host=None,
 def submit(acf_file: Path,
            adm_file: Path = None,
            aux_files: List[Path] = None,
-           mins: int = None,
            host=None,
            username=None,
-           max_user_jobs: int = None):
+           max_user_jobs: int = None,
+           **kwargs):
     """Submit an ACF file to the cluster
 
     Parameters
@@ -427,17 +424,17 @@ def submit(acf_file: Path,
         if max_user_jobs is not None:
             hpc.wait_for_user_jobs(max_user_jobs)
 
-        hpc.submit(acf_file, adm_file, aux_files, mins=mins)
+        hpc.submit(acf_file, adm_file, aux_files, **kwargs)
         return hpc.remote_dir, hpc.job_name, hpc.job_id
 
 
 def submit_multi(acf_files: List[Path],
                  adm_files: List[Path],
                  aux_files: List[List[Path]] = None,
-                 mins: int = None,
                  host=None,
                  username=None,
-                 max_user_jobs: int = None):
+                 max_user_jobs: int = None,
+                 **kwargs):
     """Submit multiple ACF files to the cluster
 
     Parameters
@@ -472,7 +469,7 @@ def submit_multi(acf_files: List[Path],
                     if max_user_jobs is not None:
                         hpc.wait_for_user_jobs(max_user_jobs)
 
-                    hpc.submit(acf_file, adm_file, aux_file, mins=mins, _ignore_resubmit=True)
+                    hpc.submit(acf_file, adm_file, aux_file, _ignore_resubmit=True, **kwargs)
                     remote_dirs.append(hpc.remote_dir)
                     job_names.append(hpc.job_name)
                     job_ids.append(hpc.job_id)
@@ -606,10 +603,6 @@ def main():
                                nargs='+',
                                help='Auxiliary files to submit',
                                default=None)
-    submit_parser.add_argument('--mins', '-m',
-                               type=int,
-                               help='The number of minutes to allocate for the job',
-                               default=None)
     submit_parser.add_argument('--max-user-jobs', '-M',
                                type=int,
                                help=('A self imposed maximum number of jobs this user can '
@@ -624,10 +617,6 @@ def main():
     submit_multi_parser.add_argument('batch_file',
                                      type=Path,
                                      help='A batch file to submit')
-    submit_multi_parser.add_argument('--mins', '-m',
-                                     type=int,
-                                     help='The number of minutes to allocate for the job',
-                                     default=None)
     submit_multi_parser.add_argument('--host', '-H',
                                      type=str,
                                      help='The host to connect to',
@@ -709,10 +698,14 @@ def main():
     # ----------------------------------------------------------------------------------------------
     # Parse the arguments
     # ----------------------------------------------------------------------------------------------
-    args = vars(parser.parse_args(sys.argv[1:]))
+    # Handle unknown arguments
+    known, unknown = parser.parse_known_args()
+    for arg in (a for a in unknown if a.startswith('-')):
+        parser._get_positional_actions()[0].choices[known.command].add_argument(arg.split('=')[0], type=str)
+
+    args = vars(parser.parse_args())
 
     LOG.info(f'Arguments: {args}')
-
     command = args.pop('command')
     logging.getLogger().setLevel(args.pop('log_level'))
 
@@ -759,7 +752,7 @@ def main():
         STATUS = [{k: v.strftime('%G-%m-%dT%H:%M:%S')
                    if isinstance(v, datetime.datetime) else v
                    for k, v in status.items()} for status in STATUS]
-        print(json.dumps())
+        print(json.dumps(STATUS))
 
     # ----------------------------------------------------------------------------------------------
     # get_results()
