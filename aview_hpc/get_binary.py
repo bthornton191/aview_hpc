@@ -30,7 +30,7 @@ def get_binary():
 
     else:
 
-        msg = f'Downloading {BINARY_NAME} from {BINARY_URL}...'
+        msg = f'Downloading {binary.name} from {url}...'
         LOG.info(msg)
         print(msg)
 

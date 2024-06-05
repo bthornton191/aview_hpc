@@ -8,3 +8,4 @@ dist
 **/__pycache__
 /cache
 /job_monitor.log
+**/aview_hpc.log
