@@ -4,9 +4,12 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
+
+import keyring
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
-from aview_hpc.get_binary import get_binary
+from .get_binary import get_binary
+from ._cli import main()
 
 BINARY = get_binary()
 
@@ -295,3 +298,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     output: List[str] = out.splitlines()
 
     return [Path(p) for p in output if p.strip()]
+
+
+if __name__ == '__main__':
+    main()

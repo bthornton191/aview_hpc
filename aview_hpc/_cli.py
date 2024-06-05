@@ -19,12 +19,13 @@ import keyring
 import pandas as pd
 from paramiko import AutoAddPolicy, SSHClient, SSHException
 
+from .config import get_config, set_config
+
 RE_SUBMISSION_RESPONSE = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
 RE_NTHREADS = re.compile(r'nthreads[ \t]*=[ \t]*(\d+)\b', flags=re.I)
 LINUX_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 RES_EXTS = ('.res', '.req', '.gra', '.msg', '.out')
-CONFIG_FILE = Path.home() / '.aview_hpc'
 LOG = logging.getLogger(__name__)
 JOB_TABLE_COLUMNS = ['jobid',
                      'jobname%-40',
@@ -395,37 +396,6 @@ def hpc_session(host=None,
         yield session
     finally:
         session.close()
-
-
-def get_config():
-    """Get the configuration for the HPC cluster"""
-    if not CONFIG_FILE.exists():
-        config = {}
-
-    else:
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-
-    return config
-
-
-def set_config(host=None, username=None, password=None, **kwargs):
-    """Set the configuration for the HPC cluster"""
-    config = get_config()
-    config['host'] = host or config.get('host', None)
-    config['username'] = username or config.get('username', None)
-
-    # All other kwargs
-    for k, v in kwargs.items():
-        config[k] = v
-
-    if password is not None and config['username'] is not None:
-        keyring.set_password('aview_hpc', config['username'], password)
-    elif password is not None:
-        raise ValueError('A username must be provided to set a password')
-
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=4)
 
 
 def submit(acf_file: Path,
