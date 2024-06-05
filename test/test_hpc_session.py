@@ -2,7 +2,6 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import MagicMock
 
 from aview_hpc._cli import HPCSession
 
@@ -44,6 +43,21 @@ class TestHPCSession(unittest.TestCase):
             # Assert the results
             self.assertTrue(len(files) > 0)
             self.assertTrue(all([f.exists() for f in files]))
+
+    def test_dir_status(self):
+
+        # Call the method under test
+        status = self.hpc.dir_status
+
+        self.assertTrue(len(status) > 0)
+        self.assertCountEqual(['name',
+                               'permissions',
+                               'nlinks',
+                               'owner',
+                               'group',
+                               'size',
+                               'modified'],
+                              status[0].keys())
 
 
 if __name__ == '__main__':

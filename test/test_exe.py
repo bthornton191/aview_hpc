@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc.aview_hpc import check_if_finished, submit, get_results  # noqa
+from aview_hpc.aview_hpc import check_if_finished, submit, get_results, get_remote_dir_status  # noqa
 from aview_hpc._cli import submit as submit_cli  # noqa
 
 TEST_ACF = Path(__file__).parent / 'models/test.acf'
@@ -49,3 +49,24 @@ class TestGetResults(unittest.TestCase):
 
             self.assertTrue(len(files) > 0)
             self.assertTrue(all([f.exists() for f in files]))
+
+
+class TestGetRemoteDirStatus(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.remote_dir, self.job_name, self.job_id = submit_cli(acf_file=TEST_ACF,
+                                                                 adm_file=TEST_ADM)
+
+    def test_get_remote_dir_status(self):
+
+        status = get_remote_dir_status(remote_dir=self.remote_dir)
+
+        self.assertTrue(len(status) > 0)
+        self.assertCountEqual(['name',
+                               'permissions',
+                               'nlinks',
+                               'owner',
+                               'group',
+                               'size',
+                               'modified'],
+                              status[0].keys())

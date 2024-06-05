@@ -1,3 +1,4 @@
+import datetime
 import logging
 import argparse
 import json
@@ -6,26 +7,26 @@ import re
 import shutil
 import socket
 import sys
+import time
 import traceback as tb
 from contextlib import contextmanager
 from getpass import getpass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Generator, List, Type, Union
+from typing import Dict, Generator, List, Type, Union
 
 import keyring
+from more_itertools import last
 import pandas as pd
-from paramiko import AutoAddPolicy, SSHClient
+from paramiko import AutoAddPolicy, SSHClient, SSHException
 
 RE_SUBMISSION_RESPONSE = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
 RE_NTHREADS = re.compile(r'nthreads[ \t]*=[ \t]*(\d+)\b', flags=re.I)
-
+LINUX_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 RES_EXTS = ('.res', '.req', '.gra', '.msg', '.out')
 CONFIG_FILE = Path.home() / '.aview_hpc'
-
 LOG = logging.getLogger(__name__)
-
 JOB_TABLE_COLUMNS = ['jobid',
                      'jobname%-40',
                      'start',
@@ -66,6 +67,13 @@ class HPCSession():
         self.ssh, self.ftp = self._connect()
 
         self.uploaded_files = {}
+
+    def wait_for_user_jobs(self, max_user_jobs: int):
+
+        while len(self.get_job_table().query('State=="RUNNING"')) >= max_user_jobs:
+            LOG.info(f'User {self.username} already has {max_user_jobs} jobs running. '
+                     'Waiting 60 seconds and trying again...')
+            time.sleep(60)
 
     def _connect(self):
         ssh = SSHClient()
@@ -164,15 +172,24 @@ class HPCSession():
             for src, dst in zip(aux_files, aux_files_):
                 shutil.copyfile(src, dst)
 
+            LOG.info(f'Uploading files for {self.job_name}')
             for local_file, tmp_file in zip([acf_file, adm_file, *aux_files],
                                             [acf_file_, adm_file_, *aux_files_]):
                 remote_file = (self.remote_dir / local_file.name).as_posix()
 
+                size = local_file.stat().st_size
                 if local_file not in self.uploaded_files:
+
+                    LOG.info(f' Uploading: {local_file.as_posix():>100} '
+                             f' ({size*1e-3:.1f} MB) '
+                             f'--> {remote_file}')
                     self.ftp.put(tmp_file, remote_file)
                     self.uploaded_files[local_file] = remote_file
                 else:
                     # Copy the file that was already uploaded
+                    LOG.info(f' Copying: {self.uploaded_files[local_file]:>100} '
+                             f' ({size*1e-3:.1f} MB) '
+                             f'--> {remote_file}')
                     self.ssh.exec_command(f'cp {self.uploaded_files[local_file]} {remote_file}')
 
         # TODO: Make this command configurable
@@ -224,7 +241,39 @@ class HPCSession():
         if stderr != '':
             raise RuntimeError(f'Error while getting job table: {stderr}')
 
-        return pd.read_csv(stdout, delimiter=',')
+        df = pd.read_csv(stdout, delimiter=',')
+        return df.assign(
+            JobName=df['JobName'].str.replace('.slurm', ''),
+            Elapsed=df['Elapsed'].str.replace('Unknown', '00:00:00'),
+            End=pd.to_datetime(df['End'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
+            Start=pd.to_datetime(df['Start'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
+        )
+
+    @property
+    def last_update(self):
+        """Get the last time the any file in `remote_dir` was updated"""
+        cmd = 'ls -lt ' + ' '.join((Path(self.remote_dir) / f'*{ext}').as_posix() for ext in RES_EXTS)
+        _, stdout, _ = self.ssh.exec_command(cmd)
+        stdout = stdout.read().decode()
+        date = re.search(' +'.join([f'(?P<month>{"|".join(LINUX_MONTHS)})',
+                                    r'(?P<day>\d{1,2})',
+                                    r'(?P<hour>\d{2}):(?P<minute>\d{2})']),
+                         stdout.splitlines()[0]).groupdict()
+
+        last_updated_file = Path(stdout.splitlines()[0].split()[-1])
+
+        date = {k: int(v) if k != 'month' else LINUX_MONTHS.index(v)+1 for k, v in date.items()}
+        dt = datetime.datetime(year=datetime.datetime.now().year, **date)
+        return dt, last_updated_file
+
+    @property
+    def dir_status(self):
+        """Get a list of files and stat info"""
+        cmd = 'ls -l --time-style=long-iso ' + self.remote_dir.as_posix()
+        _, stdout, _ = self.ssh.exec_command(cmd)
+
+        return [parse_ls_output(line) for line in stdout.read().decode().splitlines()
+                if line.strip() != '' and not line.startswith('total')]
 
     def get_job_messages(self):
         """Checks the files in the remote directory and returns a summary of the job
@@ -252,6 +301,32 @@ class HPCSession():
         self.ftp.close()
 
 
+def parse_ls_output(line: str) -> Dict[str, Union[str, int, datetime.datetime]]:
+    """Parse the output of `ls -l --time-style=long-iso`"""
+    re_file_info = re.compile(r'\s+'.join([r'(?P<permissions>[drwx\-]+)\.?',
+                                           r'(?P<nlinks>\d+)',
+                                           r'(?P<owner>[^\s]+)',
+                                           r'(?P<group>[^\s]+)',
+                                           r'(?P<size>\d+)',
+                                           r'(?P<date>\d{4}-\d{2}-\d{2})',
+                                           r'(?P<time>\d{2}:\d{2})',
+                                           r'(?P<name>.+)']))
+
+    match = re_file_info.match(line)
+    if match is None:
+        raise ValueError(f'Could not parse the following line: {line}')
+
+    year, month, day = map(int, match.group('date').split('-'))
+    hour, minute = map(int, match.group('time').split(':'))
+    return {'name': match.group('name'),
+            'permissions': match.group('permissions'),
+            'nlinks': int(match.group('nlinks')),
+            'owner': match.group('owner'),
+            'group': match.group('group'),
+            'size': int(match.group('size')),
+            'modified': datetime.datetime(year, month, day, hour, minute)}
+
+
 def remove_adm_path(acf_file: Path):
     """Remove the ADM file path from an ACF file
 
@@ -263,7 +338,7 @@ def remove_adm_path(acf_file: Path):
     text = acf_file.read_text()
     lines = text.splitlines()
     try:
-        first_line = next(l for l in lines)
+        first_line = next(line for line in lines)
     except StopIteration as err:
         raise ValueError(f'{acf_file} has no contents!') from err
 
@@ -283,7 +358,7 @@ def get_adm_from_acf(acf_file: Path):
     text = acf_file.read_text()
 
     try:
-        line = next(l for l in text.splitlines())
+        line = next(line for line in text.splitlines())
     except StopIteration as err:
         raise ValueError(f'{acf_file} has no contents!') from err
 
@@ -353,7 +428,8 @@ def submit(acf_file: Path,
            aux_files: List[Path] = None,
            mins: int = None,
            host=None,
-           username=None):
+           username=None,
+           max_user_jobs: int = None):
     """Submit an ACF file to the cluster
 
     Parameters
@@ -375,8 +451,10 @@ def submit(acf_file: Path,
         The job ID
     """
     with hpc_session(host=host, username=username) as hpc:
-        hpc.submit(acf_file, adm_file, aux_files, mins=mins)
+        if max_user_jobs is not None:
+            hpc.wait_for_user_jobs(max_user_jobs)
 
+        hpc.submit(acf_file, adm_file, aux_files, mins=mins)
         return hpc.remote_dir, hpc.job_name, hpc.job_id
 
 
@@ -385,7 +463,8 @@ def submit_multi(acf_files: List[Path],
                  aux_files: List[List[Path]] = None,
                  mins: int = None,
                  host=None,
-                 username=None):
+                 username=None,
+                 max_user_jobs: int = None):
     """Submit multiple ACF files to the cluster
 
     Parameters
@@ -412,10 +491,37 @@ def submit_multi(acf_files: List[Path],
     job_ids: List[int] = []
     with hpc_session(host=host, username=username) as hpc:
         for acf_file, adm_file, aux_file in zip(acf_files, adm_files, aux_files):
-            hpc.submit(acf_file, adm_file, aux_file, mins=mins, _ignore_resubmit=True)
-            remote_dirs.append(hpc.remote_dir)
-            job_names.append(hpc.job_name)
-            job_ids.append(hpc.job_id)
+
+            # This is in a loop so that it can keep trying if there is a connection issue
+            for i in range(N := 120):
+                try:
+
+                    if max_user_jobs is not None:
+                        hpc.wait_for_user_jobs(max_user_jobs)
+
+                    hpc.submit(acf_file, adm_file, aux_file, mins=mins, _ignore_resubmit=True)
+                    remote_dirs.append(hpc.remote_dir)
+                    job_names.append(hpc.job_name)
+                    job_ids.append(hpc.job_id)
+
+                except (SSHException, ConnectionResetError) as err:
+                    # This may happen if the VPN disconnects
+                    LOG.warning(f'Could not submit {acf_file} to the cluster. '
+                                f'due to the following error: {err}')
+
+                    if i < N-1:
+                        # Keep Trying
+                        LOG.warning('Waiting 60 seconds and trying again...')
+                        time.sleep(60)
+
+                    else:
+                        # Waited long enough, raise the error
+                        raise err
+
+                else:
+                    # If successful...
+                    LOG.info(f'{acf_file} submitted.')
+                    break
 
     return remote_dirs, job_names, job_ids
 
@@ -468,6 +574,20 @@ def get_job_messages(remote_dir: Path, host=None, username=None):
     return msg
 
 
+def get_last_update(remote_dir: Path, host=None, username=None):
+    with hpc_session(host=host, username=username, remote_dir=remote_dir) as hpc:
+        last_update, last_file = hpc.last_update
+
+    return last_update, last_file
+
+
+def get_remote_dir_status(remote_dir: Path, host=None, username=None):
+    with hpc_session(host=host, username=username, remote_dir=remote_dir) as hpc:
+        status = hpc.dir_status
+
+    return status
+
+
 def excepthook(exc_type: Type[Exception], exc_value: Exception, exc_tb: List[str]):
     """Print traceback to stderr"""
     print(''.join(tb.format_exception(exc_type, exc_value, exc_tb)), file=sys.stderr)
@@ -517,6 +637,11 @@ def main():
                                type=int,
                                help='The number of minutes to allocate for the job',
                                default=None)
+    submit_parser.add_argument('--max-user-jobs', '-M',
+                               type=int,
+                               help=('A self imposed maximum number of jobs this user can '
+                                     'have running at once.'),
+                               default=None)
     submit_parser.set_defaults(command='submit')
 
     # ----------------------------------------------------------------------------------------------
@@ -537,6 +662,11 @@ def main():
     submit_multi_parser.add_argument('--username', '-u',
                                      type=str,
                                      help='The username to connect with',
+                                     default=None)
+    submit_multi_parser.add_argument('--max-user-jobs', '-M',
+                                     type=int,
+                                     help=('A self imposed maximum number of jobs this user can '
+                                           'have running at once.'),
                                      default=None)
     submit_multi_parser.set_defaults(command='submit_multi')
 
@@ -560,6 +690,24 @@ def main():
                                     help='The username to connect with',
                                     default=None)
     get_results_parser.set_defaults(command='get_results')
+
+    # ----------------------------------------------------------------------------------------------
+    # Get Remote Dir Status
+    # ----------------------------------------------------------------------------------------------
+    get_remote_dir_status_parser = subparsers.add_parser('get_remote_dir_status',
+                                                         help='Get a list of files and stat info')
+    get_remote_dir_status_parser.add_argument('remote_dir',
+                                              type=Path,
+                                              help='The remote directory of the job')
+    get_remote_dir_status_parser.add_argument('--host', '-H',
+                                              type=str,
+                                              help='The host to connect to',
+                                              default=None)
+    get_remote_dir_status_parser.add_argument('--username', '-u',
+                                              type=str,
+                                              help='The username to connect with',
+                                              default=None)
+    get_remote_dir_status_parser.set_defaults(command='get_remote_dir_status')
 
     # ----------------------------------------------------------------------------------------------
     # Set Config
@@ -627,6 +775,18 @@ def main():
         print(json.dumps({'remote_dirs': [d.as_posix() for d in REMOTE_DIRS],
                           'job_names': JOB_NAMES,
                           'job_ids': JOB_IDS}))
+
+    # ----------------------------------------------------------------------------------------------
+    # get_remote_dir_status()
+    # ----------------------------------------------------------------------------------------------
+    elif command == 'get_remote_dir_status':
+        STATUS = get_remote_dir_status(**args)
+
+        # Convert datetime objects to strings
+        STATUS = [{k: v.strftime('%G-%m-%dT%H:%M:%S')
+                   if isinstance(v, datetime.datetime) else v
+                   for k, v in status.items()} for status in STATUS]
+        print(json.dumps())
 
     # ----------------------------------------------------------------------------------------------
     # get_results()
