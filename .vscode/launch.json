@@ -59,12 +59,13 @@
             "args": ["submit_multi", "--acf_file", "test\\models\\test_2.acf", "--aux_files", "test\\models\\test_2.x_t", "--acf_file", "test\\models\\test.acf", "--aux_files", "None"]
         },
         {
-            "name": "Debug Slurm Monitor",
+            "name": "Debug Job Monitor",
             "type": "debugpy",
             "request": "launch",
-            "module": "slurm_monitor",
+            "module": "job_monitor",
             "console": "integratedTerminal",
+            "args": ["--debug"],
             "justMyCode": true,
-        }
+        },
     ]
 }

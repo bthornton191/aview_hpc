@@ -4,11 +4,13 @@ from logging.handlers import WatchedFileHandler
 
 from aview_hpc._cli import main
 
+FORMATTER = logging.Formatter('%(asctime)s - %(filename)20s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
+
 
 def setup_logging(level='INFO'):
     handler = WatchedFileHandler('aview_hpc.log')
-    formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(message)s', '%Y-%m-%d %H:%M:%S')
-    handler.setFormatter(formatter)
+
+    handler.setFormatter(FORMATTER)
     root = logging.getLogger()
     root.setLevel(level)
     # Remove existing handlers for this file name, if any
@@ -20,7 +22,7 @@ def setup_logging(level='INFO'):
 
 
 def exception_hook(exc_type, exc_value, exc_traceback):
-    logging.getLogger().error("Uncaught exception",
+    logging.getLogger().error('Uncaught exception',
                               exc_info=(exc_type, exc_value, exc_traceback))
 
 

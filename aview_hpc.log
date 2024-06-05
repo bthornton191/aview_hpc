@@ -261,3 +261,13 @@
 2024-03-06 11:07:30:DEBUG:paramiko.transport.sftp:[chan 0] close(00000000)
 2024-03-06 11:07:30:DEBUG:paramiko.transport:EOF in transport thread
 2024-03-06 11:07:30:INFO:paramiko.transport.sftp:[chan 0] sftp session closed.
+2024-03-18 10:17:35 -              _cli.py - INFO - Arguments: {'log_level': 'INFO', 'command': 'get_remote_dir_status', 'remote_dir': WindowsPath('/home/ben.thornton/.tmp/test.g9pI'), 'host': None, 'username': None}
+2024-03-18 10:17:36 -         transport.py - INFO - Connected (version 2.0, client OpenSSH_8.0)
+2024-03-18 10:17:37 -         transport.py - INFO - Authentication (publickey) successful!
+2024-03-18 10:17:38 -              sftp.py - INFO - [chan 0] Opened sftp connection (server version 3)
+2024-03-18 10:17:39 -              sftp.py - INFO - [chan 0] sftp session closed.
+2024-03-18 10:18:52 -              _cli.py - INFO - Arguments: {'log_level': 'INFO', 'command': 'get_remote_dir_status', 'remote_dir': WindowsPath('/home/ben.thornton/.tmp/test.Nabp'), 'host': None, 'username': None}
+2024-03-18 10:18:53 -         transport.py - INFO - Connected (version 2.0, client OpenSSH_8.0)
+2024-03-18 10:18:54 -         transport.py - INFO - Authentication (publickey) successful!
+2024-03-18 10:18:55 -              sftp.py - INFO - [chan 0] Opened sftp connection (server version 3)
+2024-03-18 10:18:56 -              sftp.py - INFO - [chan 0] sftp session closed.

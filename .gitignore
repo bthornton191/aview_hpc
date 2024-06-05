@@ -6,3 +6,5 @@ aview_hpc.egg-info
 dist
 **.exe
 **/__pycache__
+/cache
+/job_monitor.log

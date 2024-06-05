@@ -8,7 +8,7 @@ from aview_hpc._cli import submit_multi
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc._cli import get_config, get_results, submit  # noqa
+from aview_hpc._cli import get_config, get_results, submit, get_remote_dir_status  # noqa
 from aview_hpc.aview_hpc import check_if_finished  # noqa
 
 TEST_ACF = Path(__file__).parent / 'models/test.acf'
@@ -35,7 +35,7 @@ class TestSubmit(unittest.TestCase):
 
     def test_submit_with_mins_specified(self):
 
-        remote_dir, job_name, job_id = submit(acf_file=TEST_ACF, adm_file=TEST_ADM, mins=10)
+        remote_dir, job_name, job_id = submit(acf_file=TEST_ACF, adm_file=TEST_ADM, mins=10, max_user_jobs=1)
 
         self.assertIsNotNone(remote_dir)
         self.assertIsNotNone(job_name)
@@ -70,6 +70,24 @@ class TestGetResults(unittest.TestCase):
 
             self.assertTrue(len(files) > 0)
             self.assertTrue(all([f.exists() for f in files]))
+
+
+class TestGetRemoteDirStatus(unittest.TestCase):
+
+    def setUp(self) -> None:
+        remote_dir, _, _ = submit(acf_file=TEST_ACF, adm_file=TEST_ADM)
+        self.status = get_remote_dir_status(remote_dir)
+
+    def test_get_remote_dir_status_len(self):
+        self.assertTrue(len(self.status) > 0)
+        self.assertCountEqual(['name',
+                               'permissions',
+                               'nlinks',
+                               'owner',
+                               'group',
+                               'size',
+                               'modified'],
+                              self.status[0].keys())
 
 
 class TestConfig(unittest.TestCase):

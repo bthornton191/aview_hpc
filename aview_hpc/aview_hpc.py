@@ -1,10 +1,12 @@
+import datetime
 import json
 import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List
+from typing import Dict, List, Union
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
+from adamspy.postprocess.msg import get_errors
 
 
 def submit(acf_file: Path,
@@ -12,6 +14,7 @@ def submit(acf_file: Path,
            aux_files: List[Path] = None,
            mins: int = None,
            wait_for_completion: bool = False,
+           max_user_jobs: int = None,
            _log_level=None):
     """Submit an ACF file to the cluster
 
@@ -45,6 +48,9 @@ def submit(acf_file: Path,
 
     if mins:
         cmd += ['--mins', str(mins)]
+
+    if max_user_jobs:
+        cmd += ['--max_user_jobs', str(max_user_jobs)]
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -81,6 +87,7 @@ def submit_multi(acf_files: List[Path],
                  adm_files: List[Path],
                  aux_files: List[List[Path]] = None,
                  mins: int = None,
+                 max_user_jobs: int = None,
                  _log_level=None):
     """Submit multiple ACF files to the cluster
 
@@ -122,6 +129,9 @@ def submit_multi(acf_files: List[Path],
 
         if mins:
             cmd += ['--mins', str(mins)]
+
+        if max_user_jobs:
+            cmd += ['--max-user-jobs', str(max_user_jobs)]
 
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -176,6 +186,64 @@ def check_if_finished(remote_dir: Path):
     return finished
 
 
+def check_if_finished_and_get_errors(remote_dir: Path,
+                                     ignore_static: bool = False,
+                                     ignore_parse: bool = False):
+    with TemporaryDirectory() as tmpdir:
+        try:
+            msg_file = next(f for f in get_results(Path(remote_dir),
+                                                   Path(tmpdir),
+                                                   extensions=['.msg']))
+        except StopIteration:
+            finished = False
+            errors = []
+
+        else:
+            finished = check_if_msg_finished(msg_file)
+            errors: List[str] = get_errors(msg_file)
+
+            if ignore_static:
+                errors = [e for e in errors
+                          if 'static equilibrium analysis has not been successful' not in e.lower()]
+
+            if ignore_parse:
+                errors = [e for e in errors
+                          if 'errors found parsing command. command ignored.' not in e.lower()]
+
+    return finished, errors
+
+
+def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Path]]]:
+    cmd = [str(Path(__file__).parent / 'main.exe'), 'get_remote_dir_status', remote_dir.as_posix()]
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    with subprocess.Popen(cmd,
+                          startupinfo=startupinfo,
+                          shell=True,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True) as proc:
+        out, err = proc.communicate()
+
+        # Wait for the process to finish
+        proc.wait()
+
+    if err:
+        raise RuntimeError(err)
+
+    status = json.loads(out)
+
+    # convert types
+    for s in status:
+        s['modified'] = datetime.datetime.strptime(s['modified'], '%Y-%m-%dT%H:%M:%S')
+        s['size'] = int(s['size'])
+        s['file'] = Path(remote_dir) / s['name']
+
+    return status
+
+
 def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=None):
     """Get the results files from the cluster
 
@@ -200,7 +268,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     if _log_level:
         cmd.extend(['--log_level', _log_level])
 
-    cmd += ['get_results', str(local_dir), remote_dir.as_posix()]
+    cmd += ['get_results', str(local_dir), Path(remote_dir).as_posix()]
 
     if extensions is not None:
         cmd.extend(['--extensions', ' '.join(extensions)])
@@ -208,7 +276,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-    with subprocess.Popen(' '.join(cmd),
+    with subprocess.Popen(cmd,
                           startupinfo=startupinfo,
                           shell=True,
                           stdout=subprocess.PIPE,
