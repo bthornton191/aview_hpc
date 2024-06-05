@@ -30,7 +30,9 @@ def get_binary():
 
     else:
 
-        LOG.info(f'Downloading {BINARY_NAME} from {BINARY_URL}...')
+        msg = f'Downloading {BINARY_NAME} from {BINARY_URL}...'
+        LOG.info(msg)
+        print(msg)
 
         query_parameters = {'downloadformat': ext}
         response = requests.get(url, params=query_parameters)
@@ -40,6 +42,8 @@ def get_binary():
 
         binary.write_bytes(response.content)
 
-        LOG.info(f'Downloaded {binary}.')
+        msg = f'Downloaded {binary}.'
+        LOG.info(msg)
+        print(msg)
 
     return binary

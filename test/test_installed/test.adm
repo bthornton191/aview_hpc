@@ -1,0 +1,73 @@
+Adams View model name: test
+!
+!-------------------------------- SYSTEM UNITS ---------------------------------
+!
+UNITS/
+, FORCE = POUND_FORCE
+, MASS = POUND_MASS
+, LENGTH = INCH
+, TIME = SECOND
+!
+!----------------------------------- PARTS -------------------------------------
+!
+!----------------------------------- Ground ------------------------------------
+!
+!                            adams_view_name='ground'
+PART/1
+, GROUND
+!
+!                           adams_view_name='MARKER_2'
+MARKER/2
+, PART = 1
+, QP = 0, 12, 0
+!
+!------------------------------------ Part -------------------------------------
+!
+!                            adams_view_name='PART_2'
+PART/2
+, MASS = 34.81073383
+, CM = 4
+, IP = 561.8216742, 561.8216742, 50.31238873
+!
+!                           adams_view_name='MARKER_1'
+MARKER/1
+, PART = 2
+, QP = 0, 12, 0
+, REULER = 17.10272897D, 90D, 0D
+!
+!                           adams_view_name='MARKER_3'
+MARKER/3
+, PART = 2
+, QP = 0, 12, 0
+!
+!                              adams_view_name='cm'
+MARKER/4
+, PART = 2
+, QP = 2, 5.5, 0
+, REULER = 17.10272897D, 90D, 0D
+!
+!                          adams_view_name='CYLINDER_1'
+GRAPHICS/1
+, CYLINDER
+, CM = 1
+, LENGTH = 13.60147051
+, RADIUS = 1.700183814
+!
+!-------------------------------- CONSTRAINTS ----------------------------------
+!
+!                           adams_view_name='JOINT_1'
+JOINT/1
+, REVOLUTE
+, I = 2
+, J = 3
+!
+!----------------------------- ANALYSIS SETTINGS -------------------------------
+!
+OUTPUT/
+, REQSAVE
+, GRSAVE
+!
+RESULTS/
+, XRF
+!
+END
