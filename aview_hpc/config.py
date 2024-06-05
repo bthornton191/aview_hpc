@@ -26,6 +26,10 @@ def set_config(host=None, username=None, password=None, **kwargs):
 
     # All other kwargs
     for k, v in kwargs.items():
+
+        if isinstance(v, Path):
+            v = v.as_posix()
+
         config[k] = v
 
     if password is not None and config['username'] is not None:

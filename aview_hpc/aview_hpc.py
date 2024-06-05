@@ -35,6 +35,11 @@ def submit(acf_file: Path,
     job_id : int
         The job ID
     """
+    # Cast strings to Path
+    acf_file = Path(acf_file)
+    adm_file = Path(adm_file) if adm_file is not None else None
+    aux_files = [Path(f) for f in aux_files] if aux_files is not None else None
+
     cmd = [str(get_binary())]
 
     if _log_level:
