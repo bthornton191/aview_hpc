@@ -36,7 +36,7 @@ Where
 
 To securely store the password, use the `keyring` package:
 ```shell
-python -m keyring set aview_hpc <hpc_username>
+python -m keyring set aview_hpc <user>
 ```
 This will prompt you to enter your hpc password.
 
