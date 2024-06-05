@@ -9,3 +9,4 @@ dist
 /cache
 /job_monitor.log
 **/aview_hpc.log
+**/aview.log

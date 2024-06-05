@@ -13,10 +13,10 @@ from .get_binary import get_binary
 def submit(acf_file: Path,
            adm_file: Path = None,
            aux_files: List[Path] = None,
-           mins: int = None,
            wait_for_completion: bool = False,
            max_user_jobs: int = None,
-           _log_level=None):
+           _log_level=None,
+           **kwargs):
     """Submit an ACF file to the cluster
 
     Parameters
@@ -52,8 +52,8 @@ def submit(acf_file: Path,
     if aux_files:
         cmd += ['--aux_files', *[f'"{f.name}"' for f in aux_files]]
 
-    if mins:
-        cmd += ['--mins', str(mins)]
+    for k, v in kwargs.items():
+        cmd += [f'--{k}', str(v)]
 
     if max_user_jobs:
         cmd += ['--max_user_jobs', str(max_user_jobs)]
@@ -69,9 +69,6 @@ def submit(acf_file: Path,
                           cwd=acf_file.parent,
                           text=True) as proc:
         out, err = proc.communicate()
-
-        # Wait for the process to finish
-        proc.wait()
 
     if err:
         raise RuntimeError(err)
@@ -92,9 +89,9 @@ def submit(acf_file: Path,
 def submit_multi(acf_files: List[Path],
                  adm_files: List[Path],
                  aux_files: List[List[Path]] = None,
-                 mins: int = None,
                  max_user_jobs: int = None,
-                 _log_level=None):
+                 _log_level=None,
+                 **kwargs):
     """Submit multiple ACF files to the cluster
 
     Parameters
@@ -133,8 +130,8 @@ def submit_multi(acf_files: List[Path],
 
         cmd += [str(Path(tmpdir, 'data.json'))]
 
-        if mins:
-            cmd += ['--mins', str(mins)]
+        for k, v in kwargs.items():
+            cmd += [f'--{k}', str(v)]
 
         if max_user_jobs:
             cmd += ['--max-user-jobs', str(max_user_jobs)]
