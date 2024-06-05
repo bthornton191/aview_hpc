@@ -19,20 +19,17 @@ and place it inside the `aview_hpc` package directory.
 ## Configuration
 
 ```shell
-python aview_hpc.py set_config --host <host>
-python aview_hpc.py set_config --user <user>
-python aview_hpc.py set_config --submit_cmd <submit_cmd>
-python aview_hpc.py set_config --remote_tempdir <remote_tempdir>
+python -m aview_hpc set_config --host <host>
+python -m aview_hpc set_config --user <user>
+python -m aview_hpc set_config --submit_cmd <submit_cmd>
+python -m aview_hpc set_config --remote_tempdir <remote_tempdir>
 ```
 
 Where 
 - `<host>` is the hostname of the HPC cluster
 - `<user>` is the username on the HPC cluster
 - `<submit_cmd>` is the command to submit a job on the HPC cluster (see below)
-- `<remote_tempdir>` is the directory on the HPC cluster where the simulation files will be copied to
-
-
-### Password
+- `<remote_tempdir>` is a directory on the HPC cluster where the simulation files will be copied to
 
 To securely store the password, use the `keyring` package:
 ```shell
@@ -57,6 +54,8 @@ This likely means you will need a custom submission script. See [slurm.py](hpc_s
 
 ### Building the Binary
 ```bat
+git clone https://github.com/bthornton191/aview_hpc
+cd aview_hpc
 python -m virtualenv env
 env\Scripts\activate.bat
 pip install -r requirements.txt
