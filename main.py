@@ -4,7 +4,8 @@ from logging.handlers import WatchedFileHandler
 
 from aview_hpc._cli import main
 
-FORMATTER = logging.Formatter('%(asctime)s - %(filename)20s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
+FORMATTER = logging.Formatter('%(asctime)s - %(filename)20s - %(levelname)s - %(message)s',
+                              '%Y-%m-%d %H:%M:%S')
 
 
 def setup_logging(level='INFO'):

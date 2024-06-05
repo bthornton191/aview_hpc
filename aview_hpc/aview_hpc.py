@@ -1,21 +1,22 @@
 import datetime
 import json
 import subprocess
-import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
+
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
+from .get_binary import get_binary
 
 
 def submit(acf_file: Path,
            adm_file: Path = None,
            aux_files: List[Path] = None,
-           mins: int = None,
            wait_for_completion: bool = False,
            max_user_jobs: int = None,
-           _log_level=None):
+           _log_level=None,
+           **kwargs):
     """Submit an ACF file to the cluster
 
     Parameters
@@ -34,7 +35,12 @@ def submit(acf_file: Path,
     job_id : int
         The job ID
     """
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    # Cast strings to Path
+    acf_file = Path(acf_file)
+    adm_file = Path(adm_file) if adm_file is not None else None
+    aux_files = [Path(f) for f in aux_files] if aux_files is not None else None
+
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -46,8 +52,8 @@ def submit(acf_file: Path,
     if aux_files:
         cmd += ['--aux_files', *[f'"{f.name}"' for f in aux_files]]
 
-    if mins:
-        cmd += ['--mins', str(mins)]
+    for k, v in kwargs.items():
+        cmd += [f'--{k}', str(v)]
 
     if max_user_jobs:
         cmd += ['--max_user_jobs', str(max_user_jobs)]
@@ -63,9 +69,6 @@ def submit(acf_file: Path,
                           cwd=acf_file.parent,
                           text=True) as proc:
         out, err = proc.communicate()
-
-        # Wait for the process to finish
-        proc.wait()
 
     if err:
         raise RuntimeError(err)
@@ -86,9 +89,9 @@ def submit(acf_file: Path,
 def submit_multi(acf_files: List[Path],
                  adm_files: List[Path],
                  aux_files: List[List[Path]] = None,
-                 mins: int = None,
                  max_user_jobs: int = None,
-                 _log_level=None):
+                 _log_level=None,
+                 **kwargs):
     """Submit multiple ACF files to the cluster
 
     Parameters
@@ -111,7 +114,7 @@ def submit_multi(acf_files: List[Path],
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
 
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -127,8 +130,8 @@ def submit_multi(acf_files: List[Path],
 
         cmd += [str(Path(tmpdir, 'data.json'))]
 
-        if mins:
-            cmd += ['--mins', str(mins)]
+        for k, v in kwargs.items():
+            cmd += [f'--{k}', str(v)]
 
         if max_user_jobs:
             cmd += ['--max-user-jobs', str(max_user_jobs)]
@@ -214,7 +217,7 @@ def check_if_finished_and_get_errors(remote_dir: Path,
 
 
 def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Path]]]:
-    cmd = [str(Path(__file__).parent / 'main.exe'), 'get_remote_dir_status', remote_dir.as_posix()]
+    cmd = [str(get_binary()), 'get_remote_dir_status', remote_dir.as_posix()]
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -263,7 +266,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     List[Path]
         A list of paths to the downloaded files
     """
-    cmd = [str(Path(__file__).parent / 'main.exe')]
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
