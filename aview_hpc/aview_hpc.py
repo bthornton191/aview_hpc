@@ -5,13 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
 
-import keyring
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
 from .get_binary import get_binary
-from ._cli import main
-
-BINARY = get_binary()
 
 
 def submit(acf_file: Path,
@@ -39,7 +35,7 @@ def submit(acf_file: Path,
     job_id : int
         The job ID
     """
-    cmd = [str(BINARY)]
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -116,7 +112,7 @@ def submit_multi(acf_files: List[Path],
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
 
-    cmd = [str(BINARY)]
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -219,7 +215,7 @@ def check_if_finished_and_get_errors(remote_dir: Path,
 
 
 def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Path]]]:
-    cmd = [str(BINARY), 'get_remote_dir_status', remote_dir.as_posix()]
+    cmd = [str(get_binary()), 'get_remote_dir_status', remote_dir.as_posix()]
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -268,7 +264,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     List[Path]
         A list of paths to the downloaded files
     """
-    cmd = [str(BINARY)]
+    cmd = [str(get_binary())]
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -298,7 +294,3 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     output: List[str] = out.splitlines()
 
     return [Path(p) for p in output if p.strip()]
-
-
-if __name__ == '__main__':
-    main()

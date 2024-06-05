@@ -125,7 +125,6 @@ class HPCSession():
                acf_file: Path,
                adm_file: Path = None,
                aux_files: List[Path] = None,
-               tmp_dir: Path = None,
                _ignore_resubmit=False,
                **kwargs):
         """Submit an ACF file to the cluster
@@ -141,7 +140,6 @@ class HPCSession():
         LOG.debug(f'   acf_file: {acf_file}')
         LOG.debug(f'   adm_file: {adm_file}')
         LOG.debug(f'   aux_files: {aux_files}')
-        LOG.debug(f'   tmp_dir: {tmp_dir}')
         LOG.debug(f'   _ignore_resubmit: {_ignore_resubmit}')
         for k, v in kwargs.items():
             LOG.debug(f'   {k}: {v}')
