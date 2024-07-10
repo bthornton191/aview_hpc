@@ -1,7 +1,7 @@
 # ---------------------
-version = '0.0.1'
+version = '0.1.1'
 version_notes = 'initial'
-date = 'June, 13th 2023'
+date = 'July, 10th 2023'
 # ---------------------
 author = 'Ben Thornton'
 author_email = 'ben.thornton@hexagon.com'

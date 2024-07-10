@@ -17,7 +17,7 @@ from typing import Dict, Generator, List, Type, Union
 
 import keyring
 import pandas as pd
-from paramiko import AutoAddPolicy, SSHClient, SSHException
+from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
 from .config import get_config, set_config
 
@@ -386,7 +386,21 @@ def hpc_session(host=None,
                 job_name=None,
                 job_id=None,
                 remote_dir=None) -> Generator[HPCSession, HPCSession, None]:
-    session = HPCSession(host, username, job_name, job_id, remote_dir)
+
+    # This will repeatedly try to connect to the HPC if there is a timeout (gives up after 24 hours)
+    for _ in range(60*24):
+        try:
+            session = HPCSession(host, username, job_name, job_id, remote_dir)
+            break
+        except AuthenticationException as err:
+            if 'timeout' in err.args[0].lower():
+                msg = 'Could not authenticate with the HPC. Retrying...'
+                LOG.warning(msg)
+                print(msg)
+                time.sleep(60)
+            else:
+                raise err
+
     try:
         yield session
     finally:

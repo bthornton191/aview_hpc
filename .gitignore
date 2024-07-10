@@ -10,3 +10,4 @@ dist
 /job_monitor.log
 **/aview_hpc.log
 **/aview.log
+docker
