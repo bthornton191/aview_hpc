@@ -396,7 +396,6 @@ def hpc_session(host=None,
             if 'timeout' in err.args[0].lower():
                 msg = 'Could not authenticate with the HPC. Retrying...'
                 LOG.warning(msg)
-                print(msg)
                 time.sleep(60)
             else:
                 raise err
