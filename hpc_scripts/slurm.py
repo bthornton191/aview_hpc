@@ -1,6 +1,16 @@
 #! /usr/bin/python3
 '''Submit an ACF file to the cluster using SLURM
 
+usage: asub.py <acf_file> [options]
+
+positional arguments:
+  acf_file              Path to the ACF file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --acar                Use acar solver
+  --mins MINS           Number of minutes for job execution (default: 120)
+  
 note:
   This will recognize the following:
     * The .adm file from the .acf file
