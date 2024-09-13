@@ -16,7 +16,7 @@ pip install git+https://github.com/bthornton191/aview_hpc
 ```
 
 The package requires a binary file that will not be installed by pip. This will be automatically 
-downloaded the first time Download the binary 
+downloaded the first time the library is used. Download the binary 
 [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/aview_hpc.exe)
 and place it inside the `aview_hpc` package directory. 
 
