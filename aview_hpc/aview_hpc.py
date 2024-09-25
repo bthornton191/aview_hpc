@@ -40,7 +40,7 @@ def submit(acf_file: Path,
     adm_file = Path(adm_file) if adm_file is not None else None
     aux_files = [Path(f) for f in aux_files] if aux_files is not None else None
 
-    cmd = [str(get_binary())]
+    cmd = [f'"{get_binary()}"']
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -114,7 +114,7 @@ def submit_multi(acf_files: List[Path],
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
 
-    cmd = [str(get_binary())]
+    cmd = [f'"{get_binary()}"']
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -128,7 +128,7 @@ def submit_multi(acf_files: List[Path],
     with TemporaryDirectory() as tmpdir:
         Path(tmpdir, 'data.json').write_text(json.dumps(data, indent=4))
 
-        cmd += [str(Path(tmpdir, 'data.json'))]
+        cmd += [f'"{Path(tmpdir, "data.json")}"']
 
         for k, v in kwargs.items():
             cmd += [f'--{k}', str(v)]
