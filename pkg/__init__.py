@@ -1,7 +1,7 @@
 # ---------------------
-version = '0.1.1'
-version_notes = 'initial'
-date = 'July, 10th 2023'
+version = '0.2.0'
+version_notes = 'fixed bug that occurs when aview.exe is located on a path with spaces'
+date = 'September, 25th 2024'
 # ---------------------
 author = 'Ben Thornton'
 author_email = 'ben.thornton@hexagon.com'
