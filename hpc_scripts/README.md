@@ -2,9 +2,10 @@
 Follow the steps below to setup any jof the scripts in this directory for convenient usage on an hpc.
 
 1. Download <script>.py and put it somewhere on the hpc system (e.g. ~/scripts)
-2. Run `chmod +x /path/to/script.py`
-3. Add alias `asub="/path/to/script.py"` to your ~/.bashrc script
-4. Log out and back in for the alias to take effect
+2. Modify as necessary.
+3. Run `chmod +x /path/to/script.py`
+4. Add alias `asub="/path/to/script.py"` to your ~/.bashrc script
+5. Log out and back in for the alias to take effect
 
 Now you can submit using `asub model.acf` and it will recognize the `NTHREADS` setting in the .adm file and 
 set the ncpus accordingly in the slurm script.
