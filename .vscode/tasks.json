@@ -6,11 +6,41 @@
             "label": "freeze_main",
             "command": "${workspaceFolder}\\env\\Scripts\\activate.bat & ${workspaceFolder}\\freeze.bat",
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": [
+                        "/c"
+                    ]
+                }
             },
             "group": {
                 "kind": "build",
                 "isDefault": true
+            }
+        },
+        {
+            "label": "Build docker (Linux)",
+            "type": "shell",
+            "command": "docker build -t bthornton191/aview_hpc:adams_2022.1_linux . & docker image prune -f",
+            "options": {
+                "cwd": "${workspaceFolder}/docker/adams_2022_1_linux"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Build docker (Windows)",
+            "type": "shell",
+            "command": "docker build --network windows_default -t bthornton191/aview_hpc:adams_2023.2_windows64 . & docker image prune -f",
+            "options": {
+                "cwd": "${workspaceFolder}/docker/adams_2023_2_windows64"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
             }
         }
     ]
