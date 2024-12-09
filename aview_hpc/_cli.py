@@ -506,6 +506,8 @@ def submit_multi(acf_files: List[Path],
                     LOG.info(f'{acf_file} submitted.')
                     break
 
+            time.sleep(5)
+
     return remote_dirs, job_names, job_ids
 
 
