@@ -40,6 +40,8 @@ def get_column_def(col: str):
                  'style': {'color': 'lightcoral'}},
                 {'condition': 'params.value.includes("CANCELLED")',
                  'style': {'color': 'lightgray'}},
+                {'condition': 'params.value.includes("FAILED")',
+                 'style': {'color': 'orange'}},
             ]}}
 
     elif col.lower() in ['ncpus']:
