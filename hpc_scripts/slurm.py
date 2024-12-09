@@ -8,7 +8,6 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  --acar                Use acar solver
   --mins MINS           Number of minutes for job execution (default: 120)
   
 note:
@@ -26,38 +25,16 @@ import sys
 import traceback as tb
 
 SLURM_SCRIPT = """#!/bin/bash
+#SBATCH -J {job_name}
+#SBATCH -o {job_name}.log
+#SBATCH -e {job_name}.err
+#SBATCH --time 7200
+#SBATCH --mem 32G
+
 export LC_ALL=C
-
-#Add line "#SBATCH" to add slurm option in script
-#Add ## to comment out slurm option
-
 export MSC_OS_PREF=rhe79
 export LD_LIBRARY_PATH=/opt/hexagon/Adams/2022_1_875404/lib64
 export MSC_LICENSE_FILE=1700@10.20.0.10
-
-#Specify partition you would like to run your jobs
-#medium spec: AMD EPYC 7443P-24cores with 1TB memory x 4
-##big spec: AMD EPYC 7343-32cores with 2TB memory x 1
-
-#Partition(Queue) Name please use -p option if not working as intended
-#SBATCH -p medium
-##SBATCH -p big
-
-#Job Name
-#SBATCH -J {job_name}
-
-
-#standard output
-#SBATCH -o log
-
-#error output
-#SBATCH -e err
-
-#occupy one node
-##SBATCH --exclusive
-
-#Use this option when jobs to be run over nodes
-#SBATCH --nodes=1
 
 #Add command and option to run target software
 /opt/hexagon/adams/2023_3/mdi -c ru-s i {acf_file} exit
