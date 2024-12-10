@@ -300,7 +300,6 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
 
 def get_binary_version():
     cmd = [f'"{get_binary(print_=False)}"', 'version']
-    print('Running: ' + ' '.join(cmd))
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
