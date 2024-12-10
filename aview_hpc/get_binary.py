@@ -9,7 +9,7 @@ REPO_URL = 'https://github.com/bthornton191/aview_hpc'
 
 BINARY_NAME = 'aview_hpc'
 BINARY_URL = {
-    'windows': f'{REPO_URL}/releases/tag/v{PKG_VERSION}/download/{BINARY_NAME}.exe',
+    'windows': f'{REPO_URL}/releases/download/v{PKG_VERSION}/{BINARY_NAME}.exe',
 
     # Linux currently not supported
     'linux': None,
