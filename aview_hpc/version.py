@@ -1,3 +1,3 @@
-version = '0.2.9'
-version_notes = 'Fix download URL for Windows binary in get_binary.py'
+version = '0.2.10'
+version_notes = 'Remove debug print statement from get_binary_version function'
 date = 'December, 10th 2024'
