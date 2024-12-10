@@ -1,7 +1,7 @@
-import datetime
-import logging
 import argparse
+import datetime
 import json
+import logging
 import os
 import re
 import shutil
@@ -19,6 +19,9 @@ import keyring
 import pandas as pd
 from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
+from .version import version
+
+from .aview_hpc import get_binary_version
 from .config import get_config, set_config
 
 RE_SUBMISSION_RESPONSE = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
@@ -38,6 +41,7 @@ JOB_TABLE_COLUMNS = ['jobid',
                      'ncpus',
                      'submitline%-70',
                      'workdir%-70']
+SLEEP_TIME = 10
 
 
 class HPCSession():
@@ -506,7 +510,8 @@ def submit_multi(acf_files: List[Path],
                     LOG.info(f'{acf_file} submitted.')
                     break
 
-            time.sleep(5)
+            LOG.info(f'Waiting {SLEEP_TIME} seconds before submitting the next job...')
+            time.sleep(SLEEP_TIME)
 
     return remote_dirs, job_names, job_ids
 
@@ -711,6 +716,14 @@ def main():
     get_config_parser.set_defaults(command='get_config')
 
     # ----------------------------------------------------------------------------------------------
+    # Version
+    # ----------------------------------------------------------------------------------------------
+    version_parser = subparsers.add_parser('version',
+                                           help='Get the version of the binary')
+    version_parser.set_defaults(command='version')
+    version_parser.add_argument('--binary', action='store_true', help='Get the version of the binary')
+
+    # ----------------------------------------------------------------------------------------------
     # Parse the arguments
     # ----------------------------------------------------------------------------------------------
     # Handle unknown arguments
@@ -793,6 +806,15 @@ def main():
     elif command == 'get_config':
         CONFIG = get_config()
         print('\n'.join([f'{k}={v}' for k, v in CONFIG.items()]))
+
+    # ----------------------------------------------------------------------------------------------
+    # get_version
+    # ----------------------------------------------------------------------------------------------
+    elif command == 'version':
+        if args['binary']:
+            print(get_binary_version())
+        else:
+            print(version)
 
 
 if __name__ == '__main__':

@@ -296,3 +296,18 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     output: List[str] = out.splitlines()
 
     return [Path(p) for p in output if p.strip()]
+
+
+def get_binary_version():
+    cmd = [str(get_binary()), 'version']
+
+    with subprocess.Popen(cmd,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True) as proc:
+        out, err = proc.communicate()
+
+    if err:
+        raise RuntimeError(err)
+
+    return out.strip()

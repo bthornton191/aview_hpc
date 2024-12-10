@@ -1,12 +1,13 @@
 import setuptools
 import pkg
+from aview_hpc.version import version
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name=pkg.name,
-    version=pkg.version,
+    version=version,
     author=pkg.author,
     author_email=pkg.author_email,
     description=pkg.description,
