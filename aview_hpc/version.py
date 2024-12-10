@@ -1,3 +1,3 @@
-version = '0.2.5'
-version_notes = 'fixed bug when `_bin_version` is called on an old binary'
+version = '0.2.6'
+version_notes = 'Refactor get_binary function to allow optional print output.'
 date = 'December, 10th 2024'

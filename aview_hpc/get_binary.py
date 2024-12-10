@@ -17,7 +17,7 @@ BINARY_URL = {
 LOG = logging.getLogger(__name__)
 
 
-def get_binary():
+def get_binary(print_=True):
 
     url = BINARY_URL.get(platform.system().lower())
 
@@ -35,7 +35,8 @@ def get_binary():
         binary.unlink(missing_ok=True)
         msg = f'Downloading {binary.name} from {url}...'
         LOG.info(msg)
-        print(msg)
+        if print_:
+            print(msg)
 
         query_parameters = {'downloadformat': ext}
         response = requests.get(url, params=query_parameters)
@@ -47,7 +48,8 @@ def get_binary():
 
         msg = f'Downloaded {binary}.'
         LOG.info(msg)
-        print(msg)
+        if print_:
+            print(msg)
 
     return binary
 

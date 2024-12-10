@@ -299,7 +299,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
 
 
 def get_binary_version():
-    cmd = [str(get_binary()), 'version']
+    cmd = [str(get_binary(print_=False)), 'version']
 
     with subprocess.Popen(cmd,
                           stdout=subprocess.PIPE,
