@@ -1,3 +1,3 @@
-version = '0.2.4'
-version_notes = 'Added a `binary_version` command which will print the version of the binary'
-date = 'December, 9th 2024'
+version = '0.2.5'
+version_notes = 'fixed bug when `_bin_version` is called on an old binary'
+date = 'December, 10th 2024'
