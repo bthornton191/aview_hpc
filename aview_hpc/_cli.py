@@ -19,10 +19,10 @@ import keyring
 import pandas as pd
 from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
-from .version import version
-
 from .aview_hpc import get_binary_version
 from .config import get_config, set_config
+from .get_binary import get_binary
+from .version import version
 
 RE_SUBMISSION_RESPONSE = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
@@ -716,6 +716,13 @@ def main():
     get_config_parser.set_defaults(command='get_config')
 
     # ----------------------------------------------------------------------------------------------
+    # Get Binary
+    # ----------------------------------------------------------------------------------------------
+    get_binary_parser = subparsers.add_parser('get_binary',
+                                              help='Get the binary')
+    get_binary_parser.set_defaults(command='get_binary')
+
+    # ----------------------------------------------------------------------------------------------
     # Version
     # ----------------------------------------------------------------------------------------------
     version_parser = subparsers.add_parser('version',
@@ -808,7 +815,14 @@ def main():
         print('\n'.join([f'{k}={v}' for k, v in CONFIG.items()]))
 
     # ----------------------------------------------------------------------------------------------
-    # get_version
+    # get_binary
+    # ----------------------------------------------------------------------------------------------
+    elif command == 'get_binary':
+        binary = get_binary()
+        print(binary)
+
+    # ----------------------------------------------------------------------------------------------
+    # version
     # ----------------------------------------------------------------------------------------------
     elif command == 'version':
         if args['binary']:
