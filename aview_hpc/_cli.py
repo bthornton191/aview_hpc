@@ -19,7 +19,7 @@ import keyring
 import pandas as pd
 from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
-from .aview_hpc import get_binary_version
+from .aview_hpc import get_binary_version, resubmit_job
 from .config import get_config, set_config
 from .get_binary import get_binary
 from .version import version
@@ -300,6 +300,28 @@ class HPCSession():
                                                          f'in {self.remote_dir}')
 
         return msg
+
+    def resubmit_job(self, remote_dir: Path):
+        """Resubmit a in a given remote directory"""
+        self.ssh.exec_command(f'rm {remote_dir.as_posix()}/*.slurm')
+        try:
+            acf_file = Path(next((f for f in self.ftp.listdir(remote_dir.as_posix())
+                                  if f.endswith('.acf'))))
+        except StopIteration as err:
+            raise StopIteration(f'No ACF file found in {remote_dir}') from err
+
+        _, stdout, stderr = self.ssh.exec_command(f'{self.submit_cmd} {acf_file.as_posix()}')
+        output = stdout.read().decode()
+
+        LOG.info(f'Output: {output}')
+        if not RE_SUBMISSION_RESPONSE.match(output):
+            raise RuntimeError(f'Could not submit {acf_file} to the cluster.\n'
+                               f'Output: {output}.\n'
+                               f'Error: {stderr.read().decode()}')
+
+        self.job_id = int(RE_SUBMISSION_RESPONSE.match(output).group(1))
+        self.remote_dir = remote_dir
+        self.job_name = remote_dir.stem
 
     def close(self):
         self.ssh.close()
@@ -731,6 +753,23 @@ def main():
     version_parser.add_argument('--binary', action='store_true', help='Get the version of the binary')
 
     # ----------------------------------------------------------------------------------------------
+    # Get Job Table
+    # ----------------------------------------------------------------------------------------------
+    get_job_table_parser = subparsers.add_parser('get_job_table',
+                                                 help='Get the job table')
+    get_job_table_parser.set_defaults(command='get_job_table')
+
+    # ----------------------------------------------------------------------------------------------
+    # Resubmit Job
+    # ----------------------------------------------------------------------------------------------
+    get_job_table_parser = subparsers.add_parser('resubmit_job',
+                                                 help='Resubmit a job in a given remote directory')
+    get_job_table_parser.set_defaults(command='resubmit_job')
+    get_job_table_parser.add_argument('remote_dir',
+                                      type=Path,
+                                      help='The remote directory of the job')
+
+    # ----------------------------------------------------------------------------------------------
     # Parse the arguments
     # ----------------------------------------------------------------------------------------------
     # Handle unknown arguments
@@ -829,6 +868,21 @@ def main():
             print(get_binary_version())
         else:
             print(version)
+
+    # ----------------------------------------------------------------------------------------------
+    # get_job_table
+    # ----------------------------------------------------------------------------------------------
+    elif command == 'get_job_table':
+        df = get_job_table()
+
+        # Print the dataframe as a csv
+        print(df.to_csv(index=False))
+
+    # ----------------------------------------------------------------------------------------------
+    # resubmit_job
+    # ----------------------------------------------------------------------------------------------
+    elif command == 'resubmit_job':
+        resubmit_job(args['remote_dir'])
 
 
 if __name__ == '__main__':

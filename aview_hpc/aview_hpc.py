@@ -1,9 +1,12 @@
 import datetime
+from io import StringIO
 import json
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
+
+import pandas as pd
 
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
@@ -316,3 +319,43 @@ def get_binary_version():
         raise RuntimeError(err)
 
     return out.strip()
+
+
+def get_job_table():
+    cmd = [str(get_binary()), 'get_job_table']
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    with subprocess.Popen(cmd,
+                          startupinfo=startupinfo,
+                          shell=True,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True) as proc:
+        out, err = proc.communicate()
+
+    if err:
+        raise RuntimeError(err)
+
+    # Parse the csv output into a dataframe
+    return pd.read_csv(StringIO(out))
+
+
+def resubmit_job(remote_dir: Path):
+    cmd = [str(get_binary()), 'resubmit_job', remote_dir.as_posix()]
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    with subprocess.Popen(cmd,
+                          startupinfo=startupinfo,
+                          shell=True,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          text=True) as proc:
+        _, err = proc.communicate()
+
+    if err:
+        raise RuntimeError(err)
+
