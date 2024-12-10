@@ -57,7 +57,7 @@ def get_binary(print_=True):
 def _bin_version(bin_file: Path):
     try:
         version = subprocess.check_output([str(bin_file), 'version'], text=True).strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         version = None
 
     return version
