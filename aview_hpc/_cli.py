@@ -17,6 +17,7 @@ from typing import Dict, Generator, List, Type, Union
 
 import keyring
 import pandas as pd
+from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
 from .aview_hpc import get_binary_version
@@ -305,8 +306,8 @@ class HPCSession():
         """Resubmit a in a given remote directory"""
         self.ssh.exec_command(f'rm {remote_dir.as_posix()}/*.slurm')
         try:
-            acf_file = Path(next(f for f in self.ftp.listdir(remote_dir.as_posix())
-                                 if f.endswith('.acf')))
+            acf_file = remote_dir / Path(next(f for f in self.ftp.listdir(remote_dir.as_posix())
+                                              if f.endswith('.acf')))
         except StopIteration as err:
             raise StopIteration(f'No ACF file found in {remote_dir}') from err
 
@@ -603,6 +604,22 @@ def get_remote_dir_status(remote_dir: Path, host=None, username=None):
 def resubmit_job(remote_dir: Path, host=None, username=None):
     with hpc_session(host=host, username=username) as hpc:
         hpc.resubmit_job(remote_dir)
+        return hpc.remote_dir, hpc.job_name, hpc.job_id
+
+
+def check_if_finished(remote_dir: Path):
+    with TemporaryDirectory() as tmpdir:
+        try:
+            msg_file = next(f for f in get_results(remote_dir,
+                                                   Path(tmpdir),
+                                                   extensions=['.msg']))
+        except StopIteration:
+            finished = False
+
+        else:
+            finished = check_if_msg_finished(msg_file)
+
+    return finished
 
 
 def excepthook(exc_type: Type[Exception], exc_value: Exception, exc_tb: List[str]):
@@ -887,7 +904,11 @@ def main():
     # resubmit_job
     # ----------------------------------------------------------------------------------------------
     elif command == 'resubmit_job':
-        resubmit_job(args['remote_dir'])
+
+        REMOTE_DIR, JOB_NAME, JOB_ID = resubmit_job(args['remote_dir'])
+        print(json.dumps({'remote_dir': REMOTE_DIR.as_posix(),
+                          'job_name': JOB_NAME,
+                          'job_id': JOB_ID}))
 
 
 if __name__ == '__main__':
