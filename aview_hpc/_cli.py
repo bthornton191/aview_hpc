@@ -19,7 +19,7 @@ import keyring
 import pandas as pd
 from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
-from .aview_hpc import get_binary_version, resubmit_job
+from .aview_hpc import get_binary_version
 from .config import get_config, set_config
 from .get_binary import get_binary
 from .version import version
@@ -305,8 +305,8 @@ class HPCSession():
         """Resubmit a in a given remote directory"""
         self.ssh.exec_command(f'rm {remote_dir.as_posix()}/*.slurm')
         try:
-            acf_file = Path(next((f for f in self.ftp.listdir(remote_dir.as_posix())
-                                  if f.endswith('.acf'))))
+            acf_file = Path(next(f for f in self.ftp.listdir(remote_dir.as_posix())
+                                 if f.endswith('.acf')))
         except StopIteration as err:
             raise StopIteration(f'No ACF file found in {remote_dir}') from err
 
@@ -598,6 +598,11 @@ def get_remote_dir_status(remote_dir: Path, host=None, username=None):
         status = hpc.dir_status
 
     return status
+
+
+def resubmit_job(remote_dir: Path, host=None, username=None):
+    with hpc_session(host=host, username=username) as hpc:
+        hpc.resubmit_job(remote_dir)
 
 
 def excepthook(exc_type: Type[Exception], exc_value: Exception, exc_tb: List[str]):
