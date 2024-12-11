@@ -12,7 +12,7 @@ BINARY_URL = {
     'windows': f'{REPO_URL}/releases/download/v{PKG_VERSION}/{BINARY_NAME}.exe',
 
     # Linux currently not supported
-    'linux': None,
+    'linux': '',
 }
 LOG = logging.getLogger(__name__)
 
@@ -27,12 +27,17 @@ def get_binary(print_=True):
     ext = url.split('.')[-1]
     binary = (Path(__file__).parent / BINARY_NAME).with_suffix(f'.{ext}')
 
-    if binary.exists() and _bin_version(binary) == PKG_VERSION:
+    bin_version = _bin_version(binary)
+    if bin_version != PKG_VERSION:
+        LOG.warning(f'Binary version mismatch: {bin_version} (expected: {PKG_VERSION})')
+        LOG.warning(f'Deleting {binary}...')
+        binary.unlink()
+
+    if binary.exists():
         LOG.debug(f'{binary} already exists, skipping download.')
 
     else:
 
-        binary.unlink(missing_ok=True)
         msg = f'Downloading {binary.name} from {url}...'
         LOG.info(msg)
         if print_:
