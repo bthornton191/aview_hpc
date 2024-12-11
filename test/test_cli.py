@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc._cli import get_config, get_remote_dir_status, get_results  # noqa
+from aview_hpc._cli import check_if_finished, get_config, get_remote_dir_status, get_results, resubmit_job  # noqa
 from aview_hpc._cli import main as cli_main  # noqa
 from aview_hpc._cli import submit, submit_multi  # noqa
 
@@ -106,3 +106,25 @@ class TestConfig(unittest.TestCase):
     def test_get_config(self):
 
         config = get_config()
+
+
+class TestResubmitJob(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.remote_dir, self.job_name, self.job_id = submit(acf_file=TEST_ACF, adm_file=TEST_ADM)
+
+        # Wait until job is completed
+        t_start = time.perf_counter()
+        while not time.perf_counter() - t_start > 120:
+
+            if check_if_finished(self.remote_dir):
+                break
+            time.sleep(5)
+
+    def test_resubmit_job(self):
+
+        remote_dir, job_name, job_id = resubmit_job(self.remote_dir)
+
+        self.assertIsNotNone(remote_dir)
+        self.assertIsNotNone(job_name)
+        self.assertIsNotNone(job_id)
