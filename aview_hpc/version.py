@@ -1,3 +1,4 @@
-version = '0.2.11'
-version_notes = 'Add resubmit_job command and get_job_table function to CLI'
+version = '0.2.12'
+version_notes = ('Fix binary version check and improve logging for download process. '
+                 'Add resubmit_job function to facilitate job resubmission in remote directories')
 date = 'December, 10th 2024'
