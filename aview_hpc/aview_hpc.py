@@ -342,7 +342,7 @@ def get_job_table():
     return pd.read_csv(StringIO(out))
 
 
-def resubmit_job(remote_dir: Path):
+def resubmit_job(remote_dir: Path, wait_for_completion: bool = False):
     cmd = [str(get_binary()), 'resubmit_job', remote_dir.as_posix()]
 
     startupinfo = subprocess.STARTUPINFO()
@@ -354,8 +354,19 @@ def resubmit_job(remote_dir: Path):
                           stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE,
                           text=True) as proc:
-        _, err = proc.communicate()
+        out, err = proc.communicate()
 
     if err:
         raise RuntimeError(err)
 
+    output = json.loads(out)
+
+    remote_dir_ = Path(output['remote_dir'])
+    job_name = output['job_name']
+    job_id = int(output['job_id'])
+
+    if wait_for_completion:
+        while True:
+            check_if_finished(remote_dir_)
+
+    return remote_dir_, job_name, job_id
