@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aview_hpc._cli import check_if_finished, get_config, get_remote_dir_status, get_results, resubmit_job  # noqa
+from aview_hpc._cli import check_if_finished, get_config, get_job_table, get_remote_dir_status, get_results, resubmit_job  # noqa
 from aview_hpc._cli import main as cli_main  # noqa
 from aview_hpc._cli import submit, submit_multi  # noqa
 
@@ -128,3 +128,16 @@ class TestResubmitJob(unittest.TestCase):
         self.assertIsNotNone(remote_dir)
         self.assertIsNotNone(job_name)
         self.assertIsNotNone(job_id)
+
+
+class TestJobTable(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.remote_dir_1, self.job_name_1, self.job_id_1 = submit(acf_file=TEST_ACF, adm_file=TEST_ADM)
+        self.remote_dir_2, self.job_name_2, self.job_id_2 = submit(acf_file=TEST_ACF, adm_file=TEST_ADM)
+
+    def test_ascending_job_id(self):
+        df = get_job_table()
+        self.assertTrue(all(df['JobID'].diff().dropna() > 0))
+
+

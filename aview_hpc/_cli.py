@@ -302,7 +302,7 @@ class HPCSession():
 
         return msg
 
-    def resubmit_job(self, remote_dir: Path):
+    def resubmit_job(self, remote_dir: Path, **kwargs):
         """Resubmit a in a given remote directory"""
         self.ssh.exec_command(f'rm {remote_dir.as_posix()}/*.slurm')
         try:
@@ -311,7 +311,11 @@ class HPCSession():
         except StopIteration as err:
             raise StopIteration(f'No ACF file found in {remote_dir}') from err
 
-        _, stdout, stderr = self.ssh.exec_command(f'{self.submit_cmd} {acf_file.as_posix()}')
+        cmd = [self.submit_cmd, acf_file.as_posix()]
+        for k, v in kwargs.items():
+            cmd += [f'--{k}', str(v)]
+
+        _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
         output = stdout.read().decode()
 
         LOG.info(f'Output: {output}')
@@ -601,9 +605,9 @@ def get_remote_dir_status(remote_dir: Path, host=None, username=None):
     return status
 
 
-def resubmit_job(remote_dir: Path, host=None, username=None):
+def resubmit_job(remote_dir: Path, host=None, username=None, **kwargs):
     with hpc_session(host=host, username=username) as hpc:
-        hpc.resubmit_job(remote_dir)
+        hpc.resubmit_job(remote_dir, **kwargs)
         return hpc.remote_dir, hpc.job_name, hpc.job_id
 
 
@@ -905,7 +909,7 @@ def main():
     # ----------------------------------------------------------------------------------------------
     elif command == 'resubmit_job':
 
-        REMOTE_DIR, JOB_NAME, JOB_ID = resubmit_job(args['remote_dir'])
+        REMOTE_DIR, JOB_NAME, JOB_ID = resubmit_job(**args)
         print(json.dumps({'remote_dir': REMOTE_DIR.as_posix(),
                           'job_name': JOB_NAME,
                           'job_id': JOB_ID}))

@@ -342,8 +342,11 @@ def get_job_table():
     return pd.read_csv(StringIO(out))
 
 
-def resubmit_job(remote_dir: Path, wait_for_completion: bool = False):
+def resubmit_job(remote_dir: Path, wait_for_completion: bool = False, **kwargs):
     cmd = [str(get_binary()), 'resubmit_job', remote_dir.as_posix()]
+
+    for k, v in kwargs.items():
+        cmd += [f'--{k}', str(v)]
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW

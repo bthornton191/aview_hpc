@@ -1,3 +1,4 @@
+from tempfile import gettempdir
 from .version import version as PKG_VERSION
 import logging
 import platform
@@ -60,9 +61,37 @@ def get_binary(print_=True):
 
 
 def _bin_version(bin_file: Path):
-    try:
-        version = subprocess.check_output([str(bin_file), 'version'], text=True).strip()
-    except (subprocess.CalledProcessError, OSError):
-        version = None
+    def load_cached(cache_file: Path):
+        if cache_file.exists():
+            try:
+                return cache_file.read_text().strip()
+            except Exception as e:
+                LOG.warning(f'Failed to read cache file {cache_file}: {e}')
+        return None
+
+    def save_cache(cache_file: Path, data: str):
+        try:
+            cache_file.write_text(data)
+        except Exception as e:
+            LOG.warning(f'Failed to write cache file {cache_file}: {e}')
+
+    cache_file = Path(gettempdir()) / (bin_file.stem + '_version.cache')
+    cached_version = load_cached(cache_file)
+
+    if cached_version and bin_file.stat().st_mtime <= cache_file.stat().st_mtime:
+        version = cached_version
+
+    else:
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            version = subprocess.check_output([str(bin_file), 'version'],
+                                              text=True,
+                                              startupinfo=startupinfo).strip()
+        except (subprocess.CalledProcessError, OSError):
+            version = None
+
+        if version:
+            save_cache(cache_file, version)
 
     return version
