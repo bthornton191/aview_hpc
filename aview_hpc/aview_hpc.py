@@ -73,7 +73,7 @@ def submit(acf_file: Path,
                           text=True) as proc:
         out, err = proc.communicate()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     output = json.loads(out)
@@ -153,7 +153,7 @@ def submit_multi(acf_files: List[Path],
             # Wait for the process to finish
             proc.wait()
 
-        if err:
+        if err and 'UserWarning' not in err:
             raise RuntimeError(err)
 
         output = json.loads(out)
@@ -236,7 +236,7 @@ def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Pa
         # Wait for the process to finish
         proc.wait()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     status = json.loads(out)
@@ -293,7 +293,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
         # Wait for the process to finish
         proc.wait()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     output: List[str] = out.splitlines()
@@ -315,7 +315,7 @@ def get_binary_version():
                           text=True) as proc:
         out, err = proc.communicate()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     return out.strip()
@@ -335,7 +335,7 @@ def get_job_table():
                           text=True) as proc:
         out, err = proc.communicate()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     # Parse the csv output into a dataframe
@@ -359,7 +359,7 @@ def resubmit_job(remote_dir: Path, wait_for_completion: bool = False, **kwargs):
                           text=True) as proc:
         out, err = proc.communicate()
 
-    if err:
+    if err and 'UserWarning' not in err:
         raise RuntimeError(err)
 
     output = json.loads(out)
