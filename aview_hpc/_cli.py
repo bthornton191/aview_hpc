@@ -248,12 +248,14 @@ class HPCSession():
             raise RuntimeError(f'Error while getting job table: {stderr}')
 
         df = pd.read_csv(stdout, delimiter=',')
-        return df.assign(
+        df = df.assign(
             JobName=df['JobName'].str.replace('.slurm', ''),
             Elapsed=df['Elapsed'].str.replace('Unknown', '00:00:00'),
             End=pd.to_datetime(df['End'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
             Start=pd.to_datetime(df['Start'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
         )
+
+        return df.sort_values('JobID')
 
     @property
     def last_update(self):
