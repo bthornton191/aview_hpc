@@ -131,7 +131,12 @@ class TestResubmitJob(unittest.TestCase):
                                     nice=self.NICE)
 
         df = get_job_table()
-        row = df[df['JobID'] == job_id].iloc[0]
+
+        try:
+            row = next(r for _, r in df.iterrows() if r['JobID'] == job_id)
+        except StopIteration:
+            self.fail(f'JobID {job_id} not found in job table')
+
         submit_line = row['SubmitLine']
         mins = int(re.search(r'--time=(\d+)', submit_line).group(1))
         mem = re.search(r'--mem=(\d+\w?)', submit_line).group(1)
