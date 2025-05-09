@@ -1,4 +1,3 @@
-version = '0.2.15'
-version_notes = ('Sort job table DataFrame by JobID after processing job attributes. '
-                 'Ignore UserWarning messages when raising RuntimeError for process errors.')
-date = 'December, 19th 2024'
+version = '0.2.16'
+version_notes = ('Fix binary unlinking to avoid errors if the file does not exist')
+date = 'May, 9th 2025'
