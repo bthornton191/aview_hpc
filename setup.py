@@ -1,13 +1,14 @@
 import setuptools
 import pkg
-from aview_hpc.version import version
+
+VERSION = '0.2.16'      # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION IN version.py
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name=pkg.name,
-    version=version,
+    version=VERSION,
     author=pkg.author,
     author_email=pkg.author_email,
     description=pkg.description,
