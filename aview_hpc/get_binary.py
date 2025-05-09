@@ -32,7 +32,7 @@ def get_binary(print_=True):
     if bin_version != PKG_VERSION:
         LOG.warning(f'Binary version mismatch: {bin_version} (expected: {PKG_VERSION})')
         LOG.warning(f'Deleting {binary}...')
-        binary.unlink()
+        binary.unlink(missing_ok=True)
 
     if binary.exists():
         LOG.debug(f'{binary} already exists, skipping download.')
