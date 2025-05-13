@@ -78,7 +78,10 @@ def _bin_version(bin_file: Path):
     cache_file = Path(gettempdir()) / (bin_file.stem + '_version.cache')
     cached_version = load_cached(cache_file)
 
-    if cached_version and bin_file.stat().st_mtime <= cache_file.stat().st_mtime:
+    if not bin_file.exists():
+        version = None
+
+    elif cached_version and bin_file.stat().st_mtime <= cache_file.stat().st_mtime:
         version = cached_version
 
     else:
