@@ -277,7 +277,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     cmd += ['get_results', str(local_dir), Path(remote_dir).as_posix()]
 
     if extensions is not None:
-        cmd.extend(['--extensions', ' '.join(extensions)])
+        cmd.extend(['--extensions', *extensions])
 
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
