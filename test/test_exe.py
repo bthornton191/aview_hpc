@@ -75,6 +75,27 @@ class TestGetResults(unittest.TestCase):
             self.assertTrue(len(files) > 0)
             self.assertTrue(all([f.exists() for f in files]))
 
+    def test_get_results_with_specific_extensions(self):
+        with TemporaryDirectory() as temp_dir:
+
+            test_exts = ['.msg', '.res']
+            files = []
+            t_start = time.perf_counter()
+            while not time.perf_counter() - t_start > 60:
+                files = get_results(remote_dir=self.remote_dir,
+                                    local_dir=Path(temp_dir),
+                                    extensions=test_exts,
+                                    _log_level='DEBUG')
+
+                if len(files) > 0:
+                    break
+                time.sleep(5)
+
+            self.assertTrue(len(files) > 0)
+            self.assertTrue(all([f.exists() for f in files]))
+            self.assertTrue(all([f.suffix in test_exts for f in files]),
+                            f'Not all files have requested extensions - {[f.name for f in files]}')
+
 
 class TestGetRemoteDirStatus(unittest.TestCase):
 
@@ -129,7 +150,7 @@ class TestResubmitJob(unittest.TestCase):
                                     mins=self.MINS,
                                     mem=self.MEM,
                                     nice=self.NICE)
-
+        time.sleep(5)  # Wait a moment for job table to update
         df = get_job_table()
 
         try:
