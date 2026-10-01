@@ -19,13 +19,21 @@ def get_config():
 
 
 def set_config(host=None, username=None, password=None, **kwargs):
-    """Set the configuration for the HPC cluster"""
+    """Set the configuration for the HPC cluster.
+
+    Keys whose argument is ``None`` are left unchanged: partial updates
+    (e.g. successive ``python -m aview_hpc set_config --key value`` calls)
+    must not wipe keys set by earlier calls.
+    """
     config = get_config()
     config['host'] = host or config.get('host', None)
     config['username'] = username or config.get('username', None)
 
-    # All other kwargs
+    # All other kwargs (None values are skipped -- see docstring)
     for k, v in kwargs.items():
+
+        if v is None:
+            continue
 
         if isinstance(v, Path):
             v = v.as_posix()

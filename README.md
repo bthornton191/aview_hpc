@@ -154,7 +154,7 @@ read-only checks.
    ```
 3. Configure the client for LSF:
    ```shell
-   python -m aview_hpc set_config --host sjcvl-thornton.cadence.com --user thornton
+   python -m aview_hpc set_config --host sjcvl-thornton.cadence.com --username thornton
    python -m aview_hpc set_config --scheduler lsf
    python -m aview_hpc set_config --submit_cmd 'python3 /home/thornton/scripts/lsf.py'
    python -m aview_hpc set_config --remote_tempdir /home/thornton/hpc_tmp

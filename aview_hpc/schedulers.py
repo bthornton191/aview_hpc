@@ -124,6 +124,28 @@ def _lsf_minutes_to_hms(value) -> str:
     return _lsf_seconds_to_hms(int(round(float(match.group(1)))) * 60)
 
 
+def _parse_lsf_datetime(value) -> 'pd.Timestamp':
+    """Parse LSF's ``Oct  1 14:01:44 2026`` format without locale
+    sensitivity: ``%b`` resolves month names against the *client* process
+    locale, which an embedding application may have changed. Returns NaT
+    for anything unparseable."""
+    match = RE_LSF_TIME.match(str(value or '').strip())
+    if match is None:
+        return pd.NaT
+    month_name, day, hour, minute, second, year = match.groups()
+    month = LSF_MONTHS.get(month_name.title())
+    if month is None:
+        return pd.NaT
+    return pd.Timestamp(year=int(year), month=month, day=int(day),
+                        hour=int(hour), minute=int(minute), second=int(second))
+
+
+LSF_MONTHS = {m: i + 1 for i, m in enumerate(
+    ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])}
+RE_LSF_TIME = re.compile(r'([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s+(\d{4})')
+
+
 class LSFBackend(SchedulerBackend):
     """Backend for IBM Spectrum LSF, verified against the Cadence ``sjlsf01``
     farm (LSF 10.1.0.15) on 2026-10-01.
@@ -206,13 +228,14 @@ class LSFBackend(SchedulerBackend):
             # trailing " L" marker (observed on both running and DONE jobs
             # on this farm, live 2026-10-01) -- it is stripped and the time
             # is kept. For running jobs this is LSF's projected finish time
-            # (slurm would report unknown); see the class docstring.
+            # (slurm would report unknown); see the class docstring. Parsing
+            # is locale-independent (see _parse_lsf_datetime).
             cleaned = (df[column].fillna('')
                        .astype(str)
                        .str.strip()
                        .str.replace(r'\s+L$', '', regex=True))
-            return (pd.to_datetime(cleaned, format='%b %d %H:%M:%S %Y', errors='coerce')
-                    .dt.strftime('%G-%m-%dT%H:%M:%S'))
+            parsed = pd.to_datetime(cleaned.map(_parse_lsf_datetime))
+            return parsed.dt.strftime('%G-%m-%dT%H:%M:%S')
 
         df = df.assign(
             JobID=df['JOBID'].astype(int),

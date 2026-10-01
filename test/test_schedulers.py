@@ -19,7 +19,8 @@ import pandas as pd
 sys.path.append(str(Path(__file__).parent.parent))
 
 from aview_hpc.schedulers import (LSFBackend, SlurmBackend, get_scheduler,  # noqa
-                                  _lsf_minutes_to_hms, _lsf_seconds_to_hms)
+                                  _lsf_minutes_to_hms, _lsf_seconds_to_hms,
+                                  _parse_lsf_datetime)
 
 FIXTURES = Path(__file__).parent / 'fixtures'
 SACCT_SAMPLE = FIXTURES / 'sacct_sample.csv'
@@ -202,7 +203,47 @@ class TestLSFBackend(unittest.TestCase):
                          'rm /tmp/x/*.lsf')
 
 
+class TestConfig(unittest.TestCase):
+    """Partial set_config updates must not wipe keys set by earlier calls."""
+
+    def test_partial_update_preserves_keys(self):
+        from aview_hpc import config as cfg
+        with TemporaryDirectory() as td:
+            with patch.object(cfg, 'CONFIG_FILE', Path(td) / '.aview_hpc'):
+                cfg.set_config(host='h1', username='u1', scheduler='lsf',
+                               key_filename='C:/k/id_ed25519', remote_tempdir='/tmp/x')
+                # A later partial update (e.g. another CLI call) that does
+                # not repeat every key must not null them out.
+                cfg.set_config(submit_cmd='python3 /home/thornton/scripts/lsf.py')
+                config = cfg.get_config()
+                self.assertEqual(config['scheduler'], 'lsf')
+                self.assertEqual(config['key_filename'], 'C:/k/id_ed25519')
+                self.assertEqual(config['remote_tempdir'], '/tmp/x')
+                self.assertEqual(config['submit_cmd'], 'python3 /home/thornton/scripts/lsf.py')
+
+    def test_scheduler_null_in_config_falls_back_to_slurm(self):
+        from aview_hpc import config as cfg
+        with TemporaryDirectory() as td:
+            with patch.object(cfg, 'CONFIG_FILE', Path(td) / '.aview_hpc'):
+                cfg.CONFIG_FILE.write_text('{"host": "h", "username": "u", "scheduler": null}')
+                config = cfg.get_config()
+                self.assertIsNone(config.get('scheduler'))
+                # The expression HPCSession uses to pick the backend:
+                scheduler = config.get('scheduler') or 'slurm'
+                self.assertEqual(get_scheduler(scheduler).name, 'slurm')
+
+
 class TestLSFHelpers(unittest.TestCase):
+
+    def test_parse_lsf_datetime(self):
+        # Locale-independent parser (no %b month-name lookup)
+        self.assertEqual(_parse_lsf_datetime('Oct  1 14:01:44 2026'),
+                         pd.Timestamp(2026, 10, 1, 14, 1, 44))
+        self.assertEqual(_parse_lsf_datetime('Sep 30 20:32:14 2026'),
+                         pd.Timestamp(2026, 9, 30, 20, 32, 14))
+        self.assertTrue(pd.isna(_parse_lsf_datetime('')))
+        self.assertTrue(pd.isna(_parse_lsf_datetime(None)))
+        self.assertTrue(pd.isna(_parse_lsf_datetime('garbage')))
 
     def test_seconds_to_hms(self):
         self.assertEqual(_lsf_seconds_to_hms('57208 second(s)'), '15:53:28')
