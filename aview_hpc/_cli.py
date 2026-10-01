@@ -51,7 +51,7 @@ class HPCSession():
         self.host = host or config.get('host', None)
         self.username = username or config.get('username', None)
         self.submit_cmd = submit_cmd or config.get('submit_cmd', None)
-        self.scheduler = scheduler or config.get('scheduler', 'slurm')
+        self.scheduler = scheduler or config.get('scheduler') or 'slurm'
         self.backend = get_scheduler(self.scheduler)
         self.key_filename = config.get('key_filename', None)
 

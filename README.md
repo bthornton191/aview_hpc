@@ -154,7 +154,7 @@ read-only checks.
    ```
 3. Configure the client for LSF:
    ```shell
-   python -m aview_hpc set_config --host submit.example.com --user thornton
+   python -m aview_hpc set_config --host submit.example.com --username user
    python -m aview_hpc set_config --scheduler lsf
    python -m aview_hpc set_config --submit_cmd 'python3 /home/user/scripts/lsf.py'
    python -m aview_hpc set_config --remote_tempdir /home/user/hpc_tmp
