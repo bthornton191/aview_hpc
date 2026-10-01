@@ -137,13 +137,18 @@ def build_bsub_command(script_file, job_name: str, mins: int, queue: str,
     string: this LSF (10.1.0.15 site wrapper) rejects multiple ``-R`` options
     when a ``span``/``cu``/``affinity`` section is involved ("Multiple -R
     resource requirement strings are not supported on ..." — live-verified
-    2026-10-01).
+    2026-10-01). A caller-supplied ``res_req`` that already contains a
+    ``span[`` section is passed through as-is (no duplicate span appended);
+    an empty/None ``res_req`` degrades to ``span[hosts=1]`` alone.
 
     Unlike ``sbatch``, bsub has no script-file argument: anything trailing the
     options is treated as the job COMMAND line. The job script is therefore
-    fed via stdin redirection (live-verified accepted, 2026-10-01).
+    fed via stdin redirection (live-verified accepted, 2026-10-01) — and
+    nothing may be appended after the redirect.
     """
-    combined_res_req = f'{str(res_req).strip()} span[hosts=1]'
+    res_req = str(res_req or '').strip()
+    combined_res_req = (res_req if 'span[' in res_req
+                        else ' '.join(p for p in (res_req, 'span[hosts=1]') if p))
     cmd = [bsub,
            '-q', str(queue),
            '-W', format_wallclock(mins),
@@ -173,22 +178,27 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
     with cwd_as(acf_file.parent):
         script_file = get_unique_file_name(Path(acf_file.with_suffix('.lsf').name))
 
-        if dry_run:
-            print(f'DRY-RUN: would write job script {script_file}:')
-            print(script)
-            cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
-                                     project=project, res_req=res_req,
-                                     n_cpus=n_cpus, email=email)
-            print(f'DRY-RUN: would run: {cmd}')
-            return None
-
-        script_file.write_text(script)
+        if args:
+            # bsub has no slot for extra arguments: words after the options
+            # (and after the stdin redirect) are parsed as the job COMMAND
+            # line, which would override the fed job script and exit 127.
+            # Checked before the dry_run/real split so both paths behave
+            # identically.
+            raise SystemExit('Unsupported arguments forwarded to bsub (they '
+                             'would become the job COMMAND line): '
+                             + ' '.join(str(a) for a in args))
 
         cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
                                  project=project, res_req=res_req,
                                  n_cpus=n_cpus, email=email)
-        if args:
-            cmd += ' ' + ' '.join(args)
+
+        if dry_run:
+            print(f'DRY-RUN: would write job script {script_file}:')
+            print(script)
+            print(f'DRY-RUN: would run: {cmd}')
+            return None
+
+        script_file.write_text(script)
 
         print(f'Running: {cmd}')
         return_code = subprocess.call(cmd, shell=True)

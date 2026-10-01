@@ -7,6 +7,7 @@ captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
 """
 import importlib.util
 import re
+import shlex
 import sys
 import unittest
 from io import StringIO
@@ -317,6 +318,40 @@ class TestLSFScript(unittest.TestCase):
         # which made every job exit 127 before this fix): the job script is
         # fed via stdin redirection (live-verified 2026-10-01).
         self.assertTrue(cmd.endswith(' < myjob_0.lsf'))
+        # shlex round-trip: the command must parse as intended under /bin/sh
+        self.assertEqual(shlex.split(cmd)[-2:], ['<', 'myjob_0.lsf'])
+
+    def test_build_bsub_command_res_req_edge_cases(self):
+        # res_req that already has a span section: passed through, no duplicate
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='select[x] span[hosts=1]', n_cpus=8)
+        self.assertIn("-R 'select[x] span[hosts=1]'", cmd)
+        self.assertEqual(cmd.count('span['), 1)
+
+        # empty res_req degrades to span[hosts=1] alone (no leading space)
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='  ', n_cpus=8)
+        self.assertIn("-R 'span[hosts=1]'", cmd)
+
+        # None res_req (explicit None from a caller) degrades the same way
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req=None, n_cpus=8)
+        self.assertIn("-R 'span[hosts=1]'", cmd)
+
+    def test_build_bsub_command_quotes_path_with_spaces(self):
+        cmd = lsf_script.build_bsub_command(
+            script_file='my job_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8)
+        self.assertTrue(cmd.endswith(" < 'my job_0.lsf'"))
+        # Round-trips through shlex exactly as two trailing tokens
+        self.assertEqual(shlex.split(cmd)[-2:], ['<', 'my job_0.lsf'])
 
     def test_build_job_script(self):
         script = lsf_script.build_job_script(
@@ -364,14 +399,34 @@ class TestLSFScript(unittest.TestCase):
         self.assertIn('-W 0:05 ', output)
         self.assertIn('-P MSC:2023.4:NNL:SIMULATION', output)
         self.assertIn('-q lnx64', output)
-        # One combined -R string, not two -R flags
-        self.assertIn('span[hosts=1]', output)
-        self.assertIn('-n 8', output)
-        # Job script fed via stdin, not as a trailing argument
-        self.assertRegex(output, r'< m\.lsf')
+        # One combined -R string, not two -R flags (pins the regression the
+        # old two-flag form would show: substring 'span[hosts=1]' alone
+        # would match either shape).
+        bsub_line = next(l for l in output.splitlines()
+                         if l.startswith('DRY-RUN: would run:'))
+        self.assertEqual(bsub_line.count(' -R '), 1)
+        self.assertIn(" -R 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9] span[hosts=1]'", bsub_line)
+        self.assertIn('-n 8 ', bsub_line)
+        # Job script fed via stdin, as the LAST words of the command (nothing
+        # may follow the redirect or bsub treats it as the job COMMAND)
+        self.assertTrue(bsub_line.endswith('< m.lsf'))
         self.assertIn('MSC_LICENSE_FILE=1700@sjflex5', output)
         self.assertIn('/home/thornton/adams/2023_4_1/mdi -c ru-s i m.acf exit', output)
         self.assertNotIn('Job <', output)
+
+    def test_submit_rejects_forwarded_extras(self):
+        """Unknown/extra args forwarded after the options would become the
+        bsub job COMMAND line (overriding the stdin-fed job script, exit 127):
+        submit() must refuse them instead of appending them."""
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            with self.assertRaises(SystemExit) as ctx:
+                lsf_script.submit(Path(acf), mins=5, queue='lnx64',
+                                  project='MSC:2023.4:NNL:SIMULATION',
+                                  res_req=lsf_script.DEFAULT_RES_REQ,
+                                  adams_home='/a', license_file='1700@x',
+                                  args=['--acar', 'True'])
+            self.assertIn('would become the job COMMAND', str(ctx.exception))
 
     def test_project_required(self):
         with TemporaryDirectory() as tmpdir:
