@@ -6,6 +6,7 @@ captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
 10.1.0.15) plus synthetic records for states not present in the capture.
 """
 import importlib.util
+import re
 import sys
 import unittest
 from io import StringIO
@@ -119,10 +120,28 @@ class TestLSFBackend(unittest.TestCase):
 
     def test_job_table_command(self):
         cmd = self.backend.job_table_command(days=7)
-        self.assertTrue(cmd.startswith('/grid/sfi/farm/bin/bjobs -a -o "'))
+        self.assertTrue(cmd.startswith('env LC_ALL=C /grid/sfi/farm/bin/bjobs -a -o "'))
         self.assertTrue(cmd.endswith('" -json'))
         self.assertIn('exec_cwd', cmd)
         self.assertIn('nthreads', cmd)
+        self.assertIn('nexec_host', cmd)
+
+    def test_job_table_command_roundtrip(self):
+        """The -o field list must contain every field the parser reads:
+        simulate a bjobs response containing EXACTLY the requested fields
+        and parse it (guards against a field being added to the parser but
+        not the command, or vice versa)."""
+        import json as _json
+        cmd = self.backend.job_table_command()
+        fields = re.search(r'-o "([^"]+)"', cmd).group(1).split()
+        sample = _json.loads(BJOBS_SAMPLE.read_text())['RECORDS'][0]
+        # Restrict each record to exactly the requested fields
+        records = [{f.upper(): rec.get(f.upper(), '') for f in fields} for rec in [sample]]
+        response = _json.dumps({'COMMAND': 'bjobs', 'JOBS': len(records),
+                                'RECORDS': records})
+        df = self.backend.parse_job_table(response)
+        self.assertEqual(len(df), 1)
+        self.assertEqual(list(df.columns), LSFBackend.JOB_TABLE_COLUMNS)
 
     def test_state_map(self):
         self.assertEqual(self.backend.STATE_MAP['PEND'], 'PENDING')
@@ -143,9 +162,18 @@ class TestLSFBackend(unittest.TestCase):
         self.assertEqual(row['State'], 'RUNNING')
         self.assertEqual(row['WorkDir'], '/home/ambinteg')  # \/ unescaped
         self.assertEqual(row['Start'], '2026-09-30T20:32:15')
-        self.assertEqual(row['End'], '2026-10-14T17:52:15')  # " L" stripped
+        # The " L" marker is stripped and the (projected, for running jobs)
+        # finish time is kept; see the LSFBackend docstring.
+        self.assertEqual(row['End'], '2026-10-14T17:52:15')
         self.assertEqual(row['Elapsed'], '15:53:28')         # 57208 second(s)
         self.assertEqual(row['NCPUs'], 13)
+        self.assertEqual(row['NNodes'], 1)
+
+        # DONE job whose finish time also carries " L" (live-observed on
+        # the farm 2026-10-01): the time must be kept, not dropped.
+        done = df[df['JobID'] == 5800002].iloc[0]
+        self.assertEqual(done['State'], 'COMPLETED')
+        self.assertEqual(done['End'], '2026-10-01T14:01:44')
 
         # Synthetic records
         self.assertEqual(df[df['JobID'] == 5800001].iloc[0]['State'], 'PENDING')
@@ -186,6 +214,30 @@ class TestLSFHelpers(unittest.TestCase):
         self.assertEqual(_lsf_minutes_to_hms('2400.0'), '1-16:00:00')
         self.assertEqual(_lsf_minutes_to_hms('60.0'), '01:00:00')
         self.assertEqual(_lsf_minutes_to_hms(''), '')
+
+
+class TestSetConfigCli(unittest.TestCase):
+    """The set_config CLI validates the scheduler name at set time."""
+
+    def _run_cli(self, *argv):
+        from aview_hpc import _cli
+        from aview_hpc import config as cfg
+        with TemporaryDirectory() as td, \
+                patch.object(cfg, 'CONFIG_FILE', Path(td) / '.aview_hpc'), \
+                patch.object(sys, 'argv', ['aview_hpc', 'set_config', *argv]):
+            _cli.main()
+            return cfg.get_config()
+
+    def test_set_scheduler_valid(self):
+        with patch('sys.stdout', new=StringIO()):
+            config = self._run_cli('--scheduler', 'lsf')
+        self.assertEqual(config['scheduler'], 'lsf')
+
+    def test_set_scheduler_invalid_exits(self):
+        with self.assertRaises(SystemExit) as ctx, \
+                patch('sys.stderr', new=StringIO()):
+            self._run_cli('--scheduler', 'slurm2')
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class TestLSFScript(unittest.TestCase):

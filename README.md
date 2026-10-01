@@ -27,7 +27,7 @@ and place it inside the `aview_hpc` package directory.
 
 ```shell
 python -m aview_hpc set_config --host <host>
-python -m aview_hpc set_config --user <user>
+python -m aview_hpc set_config --username <user>
 python -m aview_hpc set_config --submit_cmd <submit_cmd>
 python -m aview_hpc set_config --remote_tempdir <remote_tempdir>
 python -m aview_hpc set_config --scheduler <slurm|lsf>
@@ -49,7 +49,9 @@ The scheduler key controls how aview_hpc parses job submissions and job tables:
   (`PEND/RUN/DONE/EXIT` become `PENDING/RUNNING/COMPLETED/FAILED`). Note that `bjobs -a` only
   reports jobs that are pending/running/suspended or finished *recently* (the cluster's
   `CLEAN_PERIOD`, commonly on the order of an hour) — older history requires `bhist` and is
-  not included in the table.
+  not included in the table. For jobs still running, LSF reports a *projected* finish time
+  (unlike slurm, which reports unknown) — use `State`, not `End`, to decide whether a job
+  is still running.
 
 ### Authentication
 

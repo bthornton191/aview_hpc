@@ -14,12 +14,15 @@ file (``slurm`` (the default, for backwards compatibility) or ``lsf``).
 """
 
 import json
+import logging
 import re
 from io import StringIO
 from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
+
+LOG = logging.getLogger(__name__)
 
 
 class SchedulerBackend:
@@ -140,17 +143,29 @@ class LSFBackend(SchedulerBackend):
       ``job_absent_from_table`` grace logic) must account for this.
     * ``-json`` is used because ``bjobs -o "... delimiter=','"`` is rejected
       by this LSF version ("The delimiter in the format string is
-      invalid").
+      invalid"). The zero-jobs case was live-verified on 2026-10-01: bjobs
+      prints valid JSON with ``"RECORDS": []`` (and exits 0), so an empty
+      table parses cleanly.
+    * The command is prefixed with ``env LC_ALL=C`` so month names in the
+      date fields parse identically regardless of the account's locale
+      (the remote login shell is csh, which does not support inline
+      ``VAR=value`` assignment).
     * ``-u`` is intentionally not passed, so bjobs reports only the
       invoking user's jobs. This matches what consumers need and keeps the
       response small (``-u all`` returns >160k records on this farm).
+    * For jobs still running, LSF's finish time is a *projection*; for
+      finished jobs it is the actual end. Both may carry a trailing
+      ``" L"`` marker (observed live on both), which is stripped. This
+      differs from slurm, which reports unknown End for running jobs --
+      consumers that need "job still running" should use ``State``, not
+      ``End``.
     """
 
     name = 'lsf'
     BJOBS = '/grid/sfi/farm/bin/bjobs'
     JOB_TABLE_FIELDS = ('jobid job_name stat submit_time start_time '
-                        'finish_time run_time runtimelimit nthreads '
-                        'command exec_cwd')
+                        'finish_time run_time runtimelimit nexec_host '
+                        'nthreads command exec_cwd')
     JOB_TABLE_COLUMNS = ['JobID', 'JobName', 'Start', 'End', 'Elapsed',
                          'State', 'Timelimit', 'NNodes', 'NCPUs',
                          'SubmitLine', 'WorkDir']
@@ -168,7 +183,11 @@ class LSFBackend(SchedulerBackend):
     def job_table_command(self, days: int = 7, username: Optional[str] = None) -> str:
         # `days` cannot be applied -- see the class docstring. `username` is
         # not passed: without -u, bjobs reports the invoking user's jobs.
-        return f'{self.BJOBS} -a -o "{self.JOB_TABLE_FIELDS}" -json'
+        if days != 7:
+            LOG.warning('The lsf backend cannot limit the job table to %s days: '
+                        'bjobs -a only reports jobs within the cluster CLEAN_PERIOD. '
+                        'The `days` argument is ignored.', days)
+        return f'env LC_ALL=C {self.BJOBS} -a -o "{self.JOB_TABLE_FIELDS}" -json'
 
     def parse_job_table(self, text: str) -> pd.DataFrame:
         try:
@@ -183,8 +202,11 @@ class LSFBackend(SchedulerBackend):
         df = pd.DataFrame.from_records(records)
 
         def to_iso(column: str):
-            # LSF prints "Sep 30 20:32:14 2026"; running jobs have a
-            # projected finish time with a trailing " L".
+            # LSF prints "Sep 30 20:32:14 2026". Some finish times carry a
+            # trailing " L" marker (observed on both running and DONE jobs
+            # on this farm, live 2026-10-01) -- it is stripped and the time
+            # is kept. For running jobs this is LSF's projected finish time
+            # (slurm would report unknown); see the class docstring.
             cleaned = (df[column].fillna('')
                        .astype(str)
                        .str.strip()
