@@ -158,27 +158,31 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
     script = build_job_script(acf_file, license_file=license_file,
                               adams_home=adams_home,
                               ld_library_path=ld_library_path)
-    script_file = get_unique_file_name(Path(acf_file.with_suffix('.lsf').name))
 
-    if dry_run:
-        print(f'DRY-RUN: would write job script {script_file}:')
-        print(script)
+    # Everything (job script, bsub logs) is written next to the acf file.
+    with cwd_as(acf_file.parent):
+        script_file = get_unique_file_name(Path(acf_file.with_suffix('.lsf').name))
+
+        if dry_run:
+            print(f'DRY-RUN: would write job script {script_file}:')
+            print(script)
+            cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
+                                     project=project, res_req=res_req,
+                                     n_cpus=n_cpus, email=email)
+            print(f'DRY-RUN: would run: {cmd}')
+            return None
+
+        script_file.write_text(script)
+
         cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
                                  project=project, res_req=res_req,
                                  n_cpus=n_cpus, email=email)
-        print(f'DRY-RUN: would run: {cmd}')
-        return None
+        if args:
+            cmd += ' ' + ' '.join(args)
 
-    script_file.write_text(script)
+        print(f'Running: {cmd}')
+        return_code = subprocess.call(cmd, shell=True)
 
-    cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
-                             project=project, res_req=res_req,
-                             n_cpus=n_cpus, email=email)
-    if args:
-        cmd += ' ' + ' '.join(args)
-
-    print(f'Running: {cmd}')
-    return_code = subprocess.call(cmd, shell=True)
     if return_code != 0:
         print(f'bsub exited with status {return_code}', file=sys.stderr)
         sys.exit(1)
@@ -247,12 +251,11 @@ def main():
     acf_file = Path(args.acf_file).absolute()
     mins = args.mins
 
-    with cwd_as(acf_file.parent):
-        submit(acf_file, mins=mins, queue=args.queue, project=args.project,
-               res_req=args.res_req, adams_home=args.adams_home,
-               license_file=args.license_file,
-               ld_library_path=args.ld_library_path, email=args.email,
-               dry_run=args.dry_run, args=other_args)
+    submit(acf_file, mins=mins, queue=args.queue, project=args.project,
+           res_req=args.res_req, adams_home=args.adams_home,
+           license_file=args.license_file,
+           ld_library_path=args.ld_library_path, email=args.email,
+           dry_run=args.dry_run, args=other_args)
 
 
 if __name__ == '__main__':

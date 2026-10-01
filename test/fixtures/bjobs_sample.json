@@ -36,7 +36,7 @@
       "STAT": "DONE",
       "SUBMIT_TIME": "Oct  1 13:58:02 2026",
       "START_TIME": "Oct  1 13:58:05 2026",
-      "FINISH_TIME": "Oct  1 14:01:44 2026",
+      "FINISH_TIME": "Oct  1 14:01:44 2026 L",
       "RUN_TIME": "219 second(s)",
       "RUNTIMELIMIT": "720.0",
       "NEXEC_HOST": "1",

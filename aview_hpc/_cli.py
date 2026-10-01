@@ -868,6 +868,13 @@ def main():
     # set_config()
     # ----------------------------------------------------------------------------------------------
     elif command == 'set_config':
+        if args.get('scheduler') is not None:
+            try:
+                get_scheduler(args['scheduler'])
+            except ValueError as err:
+                print(f'Error: {err}', file=sys.stderr)
+                sys.exit(2)
+
         if args['username'] is not None and args['host'] is not None:
             password = getpass(f'Enter password for {args["username"]}@{args["host"]} '
                                'or press enter to skip:')
