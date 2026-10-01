@@ -1,0 +1,4 @@
+JobID,JobName,Start,End,Elapsed,State,Timelimit,NNodes,NCPUS,SubmitLine,WorkDir
+123456,test_job,2026-09-30T10:00:00,2026-09-30T11:00:00,01:00:00,COMPLETED,02:00:00,1,8,sbatch --time=120 test_job_0.slurm,/home/thornton/hpc_tmp/test_job.abcd
+123457,pend_job,Unknown,Unknown,Unknown,PENDING,02:00:00,1,8,,/home/thornton/hpc_tmp/pend_job.efgh
+123458,fail_job,2026-09-30T12:00:00,2026-09-30T12:05:00,00:05:00,FAILED,02:00:00,1,4,sbatch --time=120 fail_job_0.slurm,/home/thornton/hpc_tmp/fail_job.ijkl
