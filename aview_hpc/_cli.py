@@ -23,25 +23,14 @@ from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHExcep
 from .aview_hpc import get_binary_version
 from .config import get_config, set_config
 from .get_binary import get_binary
+from .schedulers import get_scheduler
 from .version import version
 
-RE_SUBMISSION_RESPONSE = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
 RE_NTHREADS = re.compile(r'nthreads[ \t]*=[ \t]*(\d+)\b', flags=re.I)
 LINUX_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 RES_EXTS = ('.res', '.req', '.gra', '.msg', '.out')
 LOG = logging.getLogger(__name__)
-JOB_TABLE_COLUMNS = ['jobid',
-                     'jobname%-40',
-                     'start',
-                     'end',
-                     'Elapsed',
-                     'state',
-                     'timelimit',
-                     'nnodes',
-                     'ncpus',
-                     'submitline%-70',
-                     'workdir%-70']
 SLEEP_TIME = 10
 
 
@@ -55,12 +44,16 @@ class HPCSession():
                  job_id: int = None,
                  remote_dir: Path = None,
                  remote_tempdir: Path = None,
-                 submit_cmd: str = None):
+                 submit_cmd: str = None,
+                 scheduler: str = None):
 
         config = get_config()
         self.host = host or config.get('host', None)
         self.username = username or config.get('username', None)
         self.submit_cmd = submit_cmd or config.get('submit_cmd', None)
+        self.scheduler = scheduler or config.get('scheduler', 'slurm')
+        self.backend = get_scheduler(self.scheduler)
+        self.key_filename = config.get('key_filename', None)
 
         self.remote_tempdir = remote_tempdir or config.get('remote_tempdir', None)
         if self.remote_tempdir is not None:
@@ -77,7 +70,7 @@ class HPCSession():
 
     def wait_for_user_jobs(self, max_user_jobs: int):
 
-        while len(self.get_job_table().query('State=="RUNNING"')) >= max_user_jobs:
+        while len(self.get_job_table().query(f'State in {self.backend.running_states}')) >= max_user_jobs:
             LOG.info(f'User {self.username} already has {max_user_jobs} jobs running. '
                      'Waiting 60 seconds and trying again...')
             time.sleep(60)
@@ -86,10 +79,20 @@ class HPCSession():
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
 
+        password = keyring.get_password('aview_hpc', self.username)
+        connect_kwargs = {'username': self.username, 'password': password}
+
+        if password is None:
+            # No stored password: use SSH key authentication. paramiko does
+            # this by default when no password is given, but being explicit
+            # allows a non-default key via the `key_filename` config key.
+            connect_kwargs['look_for_keys'] = True
+            connect_kwargs['allow_agent'] = True
+            if self.key_filename is not None:
+                connect_kwargs['key_filename'] = self.key_filename
+
         try:
-            ssh.connect(self.host,
-                        username=self.username,
-                        password=keyring.get_password('aview_hpc', self.username))
+            ssh.connect(self.host, **connect_kwargs)
         except socket.gaierror as err:
             raise socket.gaierror(f'Could not connect to {self.host}. '
                                   'Do you need to be on a VPN?') from err
@@ -208,12 +211,13 @@ class HPCSession():
         _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
         output = stdout.read().decode()
         LOG.info(f'Output: {output}')
-        if not RE_SUBMISSION_RESPONSE.match(output):
+        match = self.backend.re_submission_response.search(output)
+        if match is None:
             raise RuntimeError(f'Could not submit {acf_file} to the cluster.\n'
                                f'Output: {output}.\n'
                                f'Error: {stderr.read().decode()}')
 
-        self.job_id = int(RE_SUBMISSION_RESPONSE.match(output).group(1))
+        self.job_id = int(match.group(1))
 
     def mkdtemp_remote(self, name=None, n_rand=4):
         """Create a temporary directory on the cluster"""
@@ -234,26 +238,14 @@ class HPCSession():
         return remote_dir
 
     def get_job_table(self, days=7):
-        cmd = ['sacct',
-               f'-S now-{days:.0f}days',
-               '-X',
-               '-P',
-               '--delimiter=,',
-               '-o',
-               ','.join(JOB_TABLE_COLUMNS)]
-        _,  stdout, stderr = self.ssh.exec_command(' '.join(cmd))
+        cmd = self.backend.job_table_command(days=days, username=self.username)
+        _,  stdout, stderr = self.ssh.exec_command(cmd)
 
         stderr = stderr.read().decode()
         if stderr != '':
             raise RuntimeError(f'Error while getting job table: {stderr}')
 
-        df = pd.read_csv(stdout, delimiter=',')
-        df = df.assign(
-            JobName=df['JobName'].str.replace('.slurm', ''),
-            Elapsed=df['Elapsed'].str.replace('Unknown', '00:00:00'),
-            End=pd.to_datetime(df['End'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
-            Start=pd.to_datetime(df['Start'].str.replace('Unknown', '')).dt.strftime('%G-%m-%dT%H:%M:%S'),
-        )
+        df = self.backend.parse_job_table(stdout.read().decode())
 
         return df.sort_values('JobID')
 
@@ -306,7 +298,7 @@ class HPCSession():
 
     def resubmit_job(self, remote_dir: Path, **kwargs):
         """Resubmit a in a given remote directory"""
-        self.ssh.exec_command(f'rm {remote_dir.as_posix()}/*.slurm')
+        self.ssh.exec_command(self.backend.cleanup_command(remote_dir))
         try:
             acf_file = remote_dir / Path(next(f for f in self.ftp.listdir(remote_dir.as_posix())
                                               if f.endswith('.acf')))
@@ -321,12 +313,13 @@ class HPCSession():
         output = stdout.read().decode()
 
         LOG.info(f'Output: {output}')
-        if not RE_SUBMISSION_RESPONSE.match(output):
+        match = self.backend.re_submission_response.search(output)
+        if match is None:
             raise RuntimeError(f'Could not submit {acf_file} to the cluster.\n'
                                f'Output: {output}.\n'
                                f'Error: {stderr.read().decode()}')
 
-        self.job_id = int(RE_SUBMISSION_RESPONSE.match(output).group(1))
+        self.job_id = int(match.group(1))
         self.remote_dir = remote_dir
         self.job_name = remote_dir.stem
 
@@ -757,6 +750,14 @@ def main():
                                    type=Path,
                                    default=None,
                                    help='A directory on the host to use for temporary files')
+    set_config_parser.add_argument('--scheduler',
+                                   type=str,
+                                   default=None,
+                                   help='The job scheduler on the host (slurm or lsf)')
+    set_config_parser.add_argument('--key_filename',
+                                   type=str,
+                                   default=None,
+                                   help='Path to an SSH private key used when no keyring password is set')
     set_config_parser.set_defaults(command='set_config')
 
     # ----------------------------------------------------------------------------------------------
