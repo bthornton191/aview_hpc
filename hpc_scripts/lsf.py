@@ -131,20 +131,30 @@ def build_job_script(acf_file: Path, license_file: str, adams_home: str,
 def build_bsub_command(script_file, job_name: str, mins: int, queue: str,
                        project: str, res_req: str, n_cpus: int,
                        email: str = 'noemail', bsub: str = BSUB) -> str:
-    """Build the (shell-quoted) bsub command line as a single string."""
+    """Build the (shell-quoted) bsub command line as a single string.
+
+    The resource requirement and ``span[hosts=1]`` are joined into ONE ``-R``
+    string: this LSF (10.1.0.15 site wrapper) rejects multiple ``-R`` options
+    when a ``span``/``cu``/``affinity`` section is involved ("Multiple -R
+    resource requirement strings are not supported on ..." — live-verified
+    2026-10-01).
+
+    Unlike ``sbatch``, bsub has no script-file argument: anything trailing the
+    options is treated as the job COMMAND line. The job script is therefore
+    fed via stdin redirection (live-verified accepted, 2026-10-01).
+    """
+    combined_res_req = f'{str(res_req).strip()} span[hosts=1]'
     cmd = [bsub,
            '-q', str(queue),
            '-W', format_wallclock(mins),
            '-P', str(project),
-           '-R', str(res_req),
-           '-R', 'span[hosts=1]',
+           '-R', combined_res_req,
            '-n', str(n_cpus),
            '-J', str(job_name),
            '-oo', f'{job_name}.log',
            '-eo', f'{job_name}.err',
-           '-u', str(email),
-           str(script_file)]
-    return ' '.join(shlex.quote(str(c)) for c in cmd)
+           '-u', str(email)]
+    return ' '.join(shlex.quote(str(c)) for c in cmd) + f' < {shlex.quote(str(script_file))}'
 
 
 def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,

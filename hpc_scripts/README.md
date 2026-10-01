@@ -60,10 +60,14 @@ optional arguments:
 ### Notes
 - Same acf/adm/NTHREADS recognition as slurm.py — the same CAUTION about the `FILE` command
   applies (it is acf-file parsing, not scheduler-specific).
-- `NTHREADS` in the .adm file becomes `bsub -n N` plus `-R "span[hosts=1]"` so all threads
-  land on one host.
+- `NTHREADS` in the .adm file becomes `bsub -n N`, and `span[hosts=1]` is appended to the
+  resource requirement as ONE combined `-R` string (e.g. `-R "select[...] span[hosts=1]"`)
+  so all threads land on one host — this LSF build rejects multiple `-R` options when a
+  `span`/`cu`/`affinity` section is involved.
 - The job script is written next to the acf file as `<name>.lsf` (unique-ified with a
-  `_N` suffix on resubmit) — this is the glob the client's `resubmit_job` cleans up.
+  `_N` suffix on resubmit) — this is the glob the client's `resubmit_job` cleans up —
+  and is fed to bsub via stdin (`bsub ... < name.lsf`). bsub has no script-file
+  argument: a trailing filename is executed as the job COMMAND, which exits 127.
 - On success, bsub prints `Job <id> is submitted to queue <queue>.`, which is what the
   aview_hpc LSF backend parses.
 - Run under the host's python3 (RHEL 9 ships 3.9; the script is stdlib-only).

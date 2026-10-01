@@ -303,15 +303,20 @@ class TestLSFScript(unittest.TestCase):
         self.assertIn(' -W 12:00 ', cmd)
         self.assertIn(' -P MSC:2023.4:NNL:SIMULATION ', cmd)
         self.assertIn(' -q lnx64 ', cmd)
-        self.assertIn("-R 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'", cmd)
-        self.assertIn("-R 'span[hosts=1]'", cmd)
+        # ONE combined -R string: this LSF rejects multiple -R options when a
+        # span/cu/affinity section is involved (live-verified 2026-10-01).
+        self.assertIn("-R 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9] span[hosts=1]'", cmd)
+        self.assertEqual(cmd.count(' -R '), 1)
         self.assertIn(' -n 8 ', cmd)
         self.assertIn(' -J myjob ', cmd)
         self.assertIn(' -oo myjob.log ', cmd)
         self.assertIn(' -eo myjob.err ', cmd)
         self.assertIn(' -u noemail ', cmd)
         self.assertTrue(cmd.startswith('/grid/sfi/farm/bin/bsub '))
-        self.assertTrue(cmd.endswith(' myjob_0.lsf'))
+        # bsub has no script-file argument (trailing args are the job COMMAND,
+        # which made every job exit 127 before this fix): the job script is
+        # fed via stdin redirection (live-verified 2026-10-01).
+        self.assertTrue(cmd.endswith(' < myjob_0.lsf'))
 
     def test_build_job_script(self):
         script = lsf_script.build_job_script(
@@ -359,9 +364,11 @@ class TestLSFScript(unittest.TestCase):
         self.assertIn('-W 0:05 ', output)
         self.assertIn('-P MSC:2023.4:NNL:SIMULATION', output)
         self.assertIn('-q lnx64', output)
-        self.assertIn('-R', output)
+        # One combined -R string, not two -R flags
         self.assertIn('span[hosts=1]', output)
         self.assertIn('-n 8', output)
+        # Job script fed via stdin, not as a trailing argument
+        self.assertRegex(output, r'< m\.lsf')
         self.assertIn('MSC_LICENSE_FILE=1700@sjflex5', output)
         self.assertIn('/home/thornton/adams/2023_4_1/mdi -c ru-s i m.acf exit', output)
         self.assertNotIn('Job <', output)
