@@ -61,7 +61,7 @@ optional arguments:
 - Same acf/adm/NTHREADS recognition as slurm.py — the same CAUTION about the `FILE` command
   applies (it is acf-file parsing, not scheduler-specific).
 - `NTHREADS` in the .adm file becomes `bsub -n N`, and `span[hosts=1]` is appended to the
-  resource requirement as ONE combined `-R` string (e.g. `-R "select[...] span[hosts=1]"`)
+  resource requirement as ONE combined `-R` string (e.g. `-R 'select[...] span[hosts=1]'`)
   so all threads land on one host — this LSF build rejects multiple `-R` options when a
   `span`/`cu`/`affinity` section is involved.
 - The job script is written next to the acf file as `<name>.lsf` (unique-ified with a
