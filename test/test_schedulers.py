@@ -6,6 +6,8 @@ captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
 10.1.0.15) plus synthetic records for states not present in the capture.
 """
 import importlib.util
+import json
+import os
 import re
 import shlex
 import sys
@@ -445,6 +447,84 @@ class TestLSFScript(unittest.TestCase):
             with patch.object(sys, 'argv', argv):
                 with self.assertRaises(SystemExit):
                     lsf_script.main()
+
+    def _main_env(self, argv, env=None, config=None, tmpdir=None):
+        """Run lsf.py main() in dry-run with a controlled env + config file."""
+        env = dict(env or {})
+        cfg_file = Path(tmpdir) / 'aview_hpc_cfg.json'
+        if config is not None:
+            cfg_file.write_text(json.dumps(config))
+        clean = {k: v for k, v in os.environ.items()
+                 if k not in ('LSF_PROJECT', 'ADAMS_HOME', 'MSC_LICENSE_FILE')}
+        clean.update(env)
+        with patch.dict('os.environ', clean, clear=True), \
+                patch.object(lsf_script, 'CONFIG_FILE', cfg_file), \
+                patch.object(sys, 'argv', argv), \
+                patch('sys.stdout', new=StringIO()) as out:
+            lsf_script.main()
+        return out.getvalue()
+
+    def test_project_with_optional_fields_accepted(self):
+        """Cadence IT format allows trailing :optional-field segments."""
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            out = self._main_env(['lsf.py', str(acf), '--project', 'ADAMS:2023.4.1:AE:qual:NNL',
+                                  '--adams_home', '/a', '--license', '1700@x', '--dry_run'],
+                                 tmpdir=tmpdir)
+        self.assertIn('-P ADAMS:2023.4.1:AE:qual:NNL', out)
+
+    def test_project_regex_rejects_bad_shapes(self):
+        for bad in ('adams:2023.4.1:AE:qual', 'ADAMS:2023.4.1:ae:qual', 'ADAMS:2023.4.1:AE',
+                    'ADAMS::AE:qual', 'ADAMS:2023.4.1:AE:qual:', 'no-colons'):
+            self.assertIsNone(lsf_script.RE_PROJECT.fullmatch(bad), bad)
+        for good in ('ADAMS:2023.4.1:AE:qual', 'ADAMS:2023.4.1:AE:qual:NNL', 'EDI:23.1:RD:build:x:y'):
+            self.assertIsNotNone(lsf_script.RE_PROJECT.fullmatch(good), good)
+
+    def test_config_file_supplies_project_adams_home_license(self):
+        """Non-interactive SSH exec sources no login files and the harness never
+        forwards these flags, so ~/.aview_hpc must be able to supply them."""
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            out = self._main_env(['lsf.py', str(acf), '--dry_run'], tmpdir=tmpdir,
+                                 config={'project': 'ADAMS:2023.4.1:AE:qual:NNL',
+                                         'adams_home': '/home/u/adams/2023_4_1',
+                                         'license': '1700@sjflex5'})
+        self.assertIn('-P ADAMS:2023.4.1:AE:qual:NNL', out)
+        self.assertIn('/home/u/adams/2023_4_1/mdi -c ru-s i m.acf exit', out)
+        self.assertIn('MSC_LICENSE_FILE=1700@sjflex5', out)
+
+    def test_precedence_cli_over_env_over_config(self):
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            cfg = {'project': 'CFG:1:AE:x', 'adams_home': '/cfg', 'license': '1@cfg'}
+            env = {'LSF_PROJECT': 'ENV:1:AE:x', 'ADAMS_HOME': '/env'}
+            out = self._main_env(['lsf.py', str(acf), '--project', 'CLI:1:AE:x', '--dry_run'],
+                                 env=env, config=cfg, tmpdir=tmpdir)
+            self.assertIn('-P CLI:1:AE:x', out)          # CLI beats env + config
+            self.assertIn('/env/mdi', out)               # env beats config
+            self.assertIn('MSC_LICENSE_FILE=1@cfg', out)  # config used when nothing else
+
+    def test_missing_or_corrupt_config_is_ignored(self):
+        with TemporaryDirectory() as tmpdir:
+            bad = Path(tmpdir) / 'bad.json'
+            bad.write_text('{not json')
+            self.assertEqual(lsf_script.load_config(bad), {})
+            self.assertEqual(lsf_script.load_config(Path(tmpdir) / 'nope.json'), {})
+            lst = Path(tmpdir) / 'list.json'
+            lst.write_text('[1, 2]')
+            self.assertEqual(lsf_script.load_config(lst), {})
+            typed = Path(tmpdir) / 'typed.json'
+            typed.write_text(json.dumps({'project': 123, 'license': ['x'], 'adams_home': ' ',
+                                         'queue': 'lnx64'}))
+            self.assertEqual(lsf_script.load_config(typed), {'queue': 'lnx64'})
+
+    def test_project_still_required_without_any_source(self):
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            with self.assertRaises(SystemExit) as ctx:
+                self._main_env(['lsf.py', str(acf), '--adams_home', '/a', '--license', '1@x'],
+                               tmpdir=tmpdir, config={})
+            self.assertEqual(ctx.exception.code, 2)
 
     def test_adams_home_required(self):
         with TemporaryDirectory() as tmpdir:
