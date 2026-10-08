@@ -30,10 +30,14 @@ jobs:
       - name: Resolve tag to build
         id: tag
         shell: bash
+        env:
+          # Passed via env, not interpolated into the script body, so a
+          # hand-typed dispatch input can never inject shell code.
+          TAG_INPUT: ${{ inputs.tag || '' }}
         run: |
           set -euo pipefail
           REF="${GITHUB_REF_NAME:-}"
-          TAG="${{ inputs.tag || '' }}"
+          TAG="${TAG_INPUT}"
           if [ -n "$TAG" ]; then
             echo "dispatch input: $TAG" >&2
             REF="$TAG"
@@ -83,9 +87,11 @@ jobs:
 
       - name: Fail-closed version gate
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tagVersion = '${{ steps.tag.outputs.tag }}'.TrimStart('v')
+          $tagVersion = "$env:RELEASE_TAG".TrimStart('v')
           $versionPy = Select-String -Path aview_hpc/version.py `
             -Pattern "^version\s*=\s*'([^']+)'" |
             Select-Object -First 1
@@ -114,9 +120,11 @@ jobs:
 
       - name: Smoke test the exe
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tagVersion = '${{ steps.tag.outputs.tag }}'.TrimStart('v')
+          $tagVersion = "$env:RELEASE_TAG".TrimStart('v')
           if (-not (Test-Path 'dist\aview_hpc.exe')) {
             throw 'dist\aview_hpc.exe not found'
           }
@@ -137,7 +145,7 @@ jobs:
       - name: Publish the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag outputs.tag }}
+          TAG: ${{ steps.tag.outputs.tag }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'   # gh is a native exe: stderr with EAP=Stop is fatal
