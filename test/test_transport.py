@@ -18,7 +18,9 @@ Runs on any host/interpreter with pytest/unittest.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -34,6 +36,20 @@ from aview_hpc.transport import (  # noqa: E402
     _host_is_local,
     select_transport,
 )
+
+
+def scratch_dir() -> str:
+    """A temp dir that is NOT under a system temp root.
+
+    On Linux ``TemporaryDirectory()`` lands in ``/tmp``, which the
+    LocalTransport storage guard (correctly) refuses as a job-dir root --
+    so tests that need an accepted root must scratch elsewhere: under the
+    user's home when writable, else next to the repo tree.
+    """
+    base = Path.home()
+    if not base.is_dir() or not os.access(base, os.W_OK):
+        base = Path(__file__).parent
+    return tempfile.mkdtemp(prefix='avhpc_test_', dir=str(base))
 
 FAKE_SUBMIT_TEMPLATE = '''#!{python}
 import sys
@@ -54,11 +70,14 @@ class TestTransportSelection(unittest.TestCase):
     """Card deliverable 3: the `transport` key and host==self detection."""
 
     def test_explicit_local_key(self):
-        with TemporaryDirectory() as td:
+        td = scratch_dir()
+        try:
             t = select_transport(config={'transport': 'local',
                                          'remote_tempdir': td})
             self.assertIsInstance(t, LocalTransport)
             self.assertEqual(t.remote_root, Path(td))  # type: ignore[attr-defined]
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
 
     def test_explicit_ssh_key_wins_even_on_local_host(self):
         # An explicit 'ssh' beats host==self auto-detection: a submit host
@@ -90,10 +109,13 @@ class TestTransportSelection(unittest.TestCase):
             select_transport(config={'transport': 'teleport'})
 
     def test_key_whitespace_and_case_folded(self):
-        with TemporaryDirectory() as td:
+        td = scratch_dir()
+        try:
             t = select_transport(config={'transport': ' Local ',
                                          'remote_tempdir': td})
             self.assertIsInstance(t, LocalTransport)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
 
     def test_selection_is_logged(self):
         import logging
@@ -104,13 +126,14 @@ class TestTransportSelection(unittest.TestCase):
         old_level = logger.level
         logger.setLevel(logging.INFO)
         logger.addHandler(handler)
+        td = scratch_dir()
         try:
-            with TemporaryDirectory() as td:
-                select_transport(config={'transport': 'local',
-                                         'remote_tempdir': td})
+            select_transport(config={'transport': 'local',
+                                     'remote_tempdir': td})
         finally:
             logger.removeHandler(handler)
             logger.setLevel(old_level)
+            shutil.rmtree(td, ignore_errors=True)
         self.assertIn('Chosen transport: local', buf.getvalue())
 
     def test_host_is_local_loopback(self):
@@ -133,13 +156,15 @@ class TestLocalTransportOps(unittest.TestCase):
     """Card deliverable 1+5: LocalTransport ops, argv-only, no shell=True."""
 
     def setUp(self):
-        self._tmp = TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
+        # scratch_dir, NOT TemporaryDirectory: on Linux /tmp is refused by
+        # the storage guard, which is the behaviour under test elsewhere.
+        self._scratch = scratch_dir()
+        self.tmp = Path(self._scratch)
         self.fake_submit = _write_fake_submit(self.tmp)
         self.transport = LocalTransport(remote_root=self.tmp)
 
     def tearDown(self):
-        self._tmp.cleanup()
+        shutil.rmtree(self._scratch, ignore_errors=True)
 
     def test_exec_argv_submit_cmd_multiword(self):
         # submit_cmd is 'python3 /home/thornton/scripts/lsf.py' style: a
@@ -324,9 +349,12 @@ class TestLocalStorageGuard(unittest.TestCase):
 
     def test_arbitrary_existing_root_accepted(self):
         # Non-farm layout (unit test host): any existing non-temp dir works.
-        with TemporaryDirectory() as td:
+        td = scratch_dir()
+        try:
             t = LocalTransport(remote_root=Path(td))
             self.assertEqual(t.remote_root, Path(td))
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
 
 
 class TestParamikoNotImportedLocally(unittest.TestCase):
@@ -334,14 +362,15 @@ class TestParamikoNotImportedLocally(unittest.TestCase):
 
     def test_local_mode_never_imports_paramiko(self):
         saved = sys.modules.pop('paramiko', None)
+        td = scratch_dir()
         try:
-            with TemporaryDirectory() as td:
-                select_transport(config={'transport': 'local',
-                                         'remote_tempdir': td})
+            select_transport(config={'transport': 'local',
+                                     'remote_tempdir': td})
             self.assertNotIn('paramiko', sys.modules)
         finally:
             if saved is not None:
                 sys.modules['paramiko'] = saved
+            shutil.rmtree(td, ignore_errors=True)
 
     def test_sshtransport_imports_paramiko_lazily_on_connect(self):
         # The import lives inside _connect, not at module/class definition:
