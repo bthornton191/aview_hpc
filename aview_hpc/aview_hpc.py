@@ -1,7 +1,6 @@
 import datetime
-from io import StringIO
+import io
 import json
-import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Union
@@ -10,7 +9,18 @@ import pandas as pd
 
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from adamspy.postprocess.msg import get_errors
-from .get_binary import get_binary
+from .platform import run_cli, run_cli_version
+
+
+def _clean_err(err):
+    """stderr text that should raise, or None.
+
+    The CLI (and its frozen exe) emit benign ``UserWarning`` lines on
+    stderr (pandas et al.); everything else is a real failure.
+    """
+    if err and 'UserWarning' not in err:
+        return err
+    return None
 
 
 def submit(acf_file: Path,
@@ -43,7 +53,7 @@ def submit(acf_file: Path,
     adm_file = Path(adm_file) if adm_file is not None else None
     aux_files = [Path(f) for f in aux_files] if aux_files is not None else None
 
-    cmd = [f'"{get_binary()}"']
+    cmd = []
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -53,27 +63,17 @@ def submit(acf_file: Path,
     if adm_file is not None:
         cmd += ['--adm_file', str(adm_file.name)]
     if aux_files:
-        cmd += ['--aux_files', *[f'"{f.name}"' for f in aux_files]]
+        cmd += ['--aux_files', *[f.name for f in aux_files]]
 
     for k, v in kwargs.items():
         cmd += [f'--{k}', str(v)]
 
     if max_user_jobs:
-        cmd += ['--max_user_jobs', str(max_user_jobs)]
+        cmd += ['--max-user-jobs', str(max_user_jobs)]
 
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    out, err = run_cli(cmd, cwd=acf_file.parent)
 
-    with subprocess.Popen(' '.join(cmd),
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          cwd=acf_file.parent,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-    if err and 'UserWarning' not in err:
+    if _clean_err(err):
         raise RuntimeError(err)
 
     output = json.loads(out)
@@ -117,7 +117,7 @@ def submit_multi(acf_files: List[Path],
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
 
-    cmd = [f'"{get_binary()}"']
+    cmd = []
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -131,7 +131,7 @@ def submit_multi(acf_files: List[Path],
     with TemporaryDirectory() as tmpdir:
         Path(tmpdir, 'data.json').write_text(json.dumps(data, indent=4))
 
-        cmd += [f'"{Path(tmpdir, "data.json")}"']
+        cmd += [str(Path(tmpdir, 'data.json'))]
 
         for k, v in kwargs.items():
             cmd += [f'--{k}', str(v)]
@@ -139,21 +139,9 @@ def submit_multi(acf_files: List[Path],
         if max_user_jobs:
             cmd += ['--max-user-jobs', str(max_user_jobs)]
 
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        out, err = run_cli(cmd)
 
-        with subprocess.Popen(' '.join(cmd),
-                              startupinfo=startupinfo,
-                              shell=True,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              text=True) as proc:
-            out, err = proc.communicate()
-
-            # Wait for the process to finish
-            proc.wait()
-
-        if err and 'UserWarning' not in err:
+        if _clean_err(err):
             raise RuntimeError(err)
 
         output = json.loads(out)
@@ -163,18 +151,6 @@ def submit_multi(acf_files: List[Path],
         job_ids = [int(i) for i in output['job_ids']]
 
     return remote_dirs, job_names, job_ids
-
-
-def _get_python_cmd(exe: Path):
-    if exe.stem == 'aview':
-        top_dir = next(p for p in exe.parents if p.name == 'aview').parent
-        mdi = top_dir / 'mdi' if (top_dir / 'mdi').exists() else top_dir / 'common/mdi.bat'
-        cmd = [f'"{mdi}"', 'python']
-
-    else:
-        cmd = [f'"{exe}"']
-
-    return cmd
 
 
 def check_if_finished(remote_dir: Path):
@@ -220,23 +196,11 @@ def check_if_finished_and_get_errors(remote_dir: Path,
 
 
 def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Path]]]:
-    cmd = [str(get_binary()), 'get_remote_dir_status', remote_dir.as_posix()]
+    cmd = ['get_remote_dir_status', Path(remote_dir).as_posix()]
 
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    out, err = run_cli(cmd)
 
-    with subprocess.Popen(cmd,
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-        # Wait for the process to finish
-        proc.wait()
-
-    if err and 'UserWarning' not in err:
+    if _clean_err(err):
         raise RuntimeError(err)
 
     status = json.loads(out)
@@ -269,7 +233,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     List[Path]
         A list of paths to the downloaded files
     """
-    cmd = [str(get_binary())]
+    cmd = []
 
     if _log_level:
         cmd.extend(['--log_level', _log_level])
@@ -279,21 +243,9 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     if extensions is not None:
         cmd.extend(['--extensions', *extensions])
 
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    out, err = run_cli(cmd)
 
-    with subprocess.Popen(cmd,
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-        # Wait for the process to finish
-        proc.wait()
-
-    if err and 'UserWarning' not in err:
+    if _clean_err(err):
         raise RuntimeError(err)
 
     output: List[str] = out.splitlines()
@@ -302,64 +254,30 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
 
 
 def get_binary_version():
-    cmd = [f'"{get_binary(print_=False)}"', 'version']
-
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-    with subprocess.Popen(' '.join(cmd),
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-    if err and 'UserWarning' not in err:
-        raise RuntimeError(err)
-
-    return out.strip()
+    return run_cli_version()
 
 
 def get_job_table():
-    cmd = [str(get_binary()), 'get_job_table']
+    cmd = ['get_job_table']
 
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    out, err = run_cli(cmd)
 
-    with subprocess.Popen(cmd,
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-    if err and 'UserWarning' not in err:
+    if _clean_err(err):
         raise RuntimeError(err)
 
     # Parse the csv output into a dataframe
-    return pd.read_csv(StringIO(out))
+    return pd.read_csv(io.StringIO(out))
 
 
 def resubmit_job(remote_dir: Path, wait_for_completion: bool = False, **kwargs):
-    cmd = [str(get_binary()), 'resubmit_job', remote_dir.as_posix()]
+    cmd = ['resubmit_job', remote_dir.as_posix()]
 
     for k, v in kwargs.items():
         cmd += [f'--{k}', str(v)]
 
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    out, err = run_cli(cmd)
 
-    with subprocess.Popen(cmd,
-                          startupinfo=startupinfo,
-                          shell=True,
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,
-                          text=True) as proc:
-        out, err = proc.communicate()
-
-    if err and 'UserWarning' not in err:
+    if _clean_err(err):
         raise RuntimeError(err)
 
     output = json.loads(out)
