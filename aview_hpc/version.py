@@ -10,5 +10,11 @@ version_notes = ('LocalTransport: HPCSession remote operations (exec, file '
                  "'transport' key in ~/.aview_hpc (local|ssh), else local "
                  'only when the configured host resolves to this machine. '
                  'For the sjlsf01 submit-host VM case (sjcvl-thornton), '
-                 'where 0.4.x SSHed from the VM to itself.')
+                 'where 0.4.x SSHed from the VM to itself. The session\'s '
+                 'explicit username/key_filename/remote_tempdir are passed '
+                 'through to the transport (SSH argument-over-config '
+                 'precedence restored); in local mode a farm-visible root '
+                 'is mandatory (no silent /tmp fallback) and the root '
+                 'actually used is guarded; last_update uses listdir+stat '
+                 'locally so a missing extension cannot fail it.')
 date = 'October, 8th 2026'

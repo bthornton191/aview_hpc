@@ -77,10 +77,12 @@ Since 0.5.0 the client's remote operations go through a transport layer:
   transfer uses `shutil`, and job directories are created under `remote_tempdir`
   with `tempfile`. No SSH connection is made and paramiko is never imported.
 
-`local` mode requires `remote_tempdir` to be on farm-visible storage — a job
-directory on local-only disk (e.g. `/tmp` on the submit host) is invisible to the
-LSF execution hosts, so aview_hpc refuses such a root instead of submitting a
-job that can never run. Use e.g. `/vols/<user>_space/aview_hpc`.
+`local` mode requires `remote_tempdir` to be set (explicitly or from `~/.aview_hpc`)
+and to be on farm-visible storage — a job directory on local-only disk (e.g.
+`/tmp` on the submit host) is invisible to the LSF execution hosts, so aview_hpc
+refuses such a root (and refuses to run without one at all, rather than falling
+back to the system temp dir) instead of submitting a job that can never run.
+Use e.g. `/vols/<user>_space/aview_hpc`.
 
 ### Authentication
 
