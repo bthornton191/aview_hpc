@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import shutil
-import socket
 import sys
 import time
 import traceback as tb
@@ -21,6 +20,7 @@ from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
 from .aview_hpc import get_binary_version
 from .config import get_config, set_config
 from .schedulers import get_scheduler
+from .transport import SSHTransport, select_transport
 from .version import version
 
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
@@ -98,7 +98,6 @@ class HPCSession():
         self.submit_cmd = submit_cmd or config.get('submit_cmd', None)
         self.scheduler = scheduler or config.get('scheduler') or 'slurm'
         self.backend = get_scheduler(self.scheduler)
-        self.key_filename = config.get('key_filename', None)
 
         self.remote_tempdir = remote_tempdir or config.get('remote_tempdir', None)
         if self.remote_tempdir is not None:
@@ -109,7 +108,16 @@ class HPCSession():
         self.job_name: str = job_name
         self.job_id: int = job_id
 
-        self.ssh, self.ftp = self._connect()
+        # Transport seam (t_652a2eff): local when running ON the submit
+        # host, SSH otherwise.  select_transport logs which one and why.
+        # The session's RESOLVED username/key_filename/remote_tempdir are
+        # passed through: the SSH path keeps the argument-over-config
+        # precedence every CLI subcommand's --username expects, and local
+        # mode guards the root mkdtemp actually uses (review round 1).
+        self.transport = select_transport(host=self.host,
+                                          username=self.username,
+                                          key_filename=config.get('key_filename'),
+                                          remote_tempdir=self.remote_tempdir)
 
         self.uploaded_files = {}
 
@@ -121,31 +129,21 @@ class HPCSession():
             time.sleep(60)
 
     def _connect(self):
-        from paramiko import SSHClient, AutoAddPolicy
+        """Deprecated seam kept for the in-Aview job_monitor dashboard only.
 
-        ssh = SSHClient()
-        ssh.set_missing_host_key_policy(AutoAddPolicy())
-
-        password = _keyring_get_password('aview_hpc', self.username)
-        connect_kwargs = {'username': self.username, 'password': password}
-
-        if password is None:
-            # No stored password: use SSH key authentication. paramiko does
-            # this by default when no password is given, but being explicit
-            # allows a non-default key via the `key_filename` config key.
-            connect_kwargs['look_for_keys'] = True
-            connect_kwargs['allow_agent'] = True
-            if self.key_filename is not None:
-                connect_kwargs['key_filename'] = self.key_filename
-
-        try:
-            ssh.connect(self.host, **connect_kwargs)
-        except socket.gaierror as err:
-            raise socket.gaierror(f'Could not connect to {self.host}. '
-                                  'Do you need to be on a VPN?') from err
-        ftp = ssh.open_sftp()
-
-        return ssh, ftp
+        The transport refactor (t_652a2eff) moved connection handling into
+        :class:`aview_hpc.transport.SSHTransport`.  The (un-shipped)
+        job_monitor dashboard still reaches for ``session.ssh``/``session.ftp``
+        directly; exposing the underlying paramiko objects here keeps that
+        code working on the SSH path.  Local-mode sessions have no SSH
+        connection at all, so the dashboard must not be used with
+        ``transport: local``.
+        """
+        if self.transport.name != 'ssh':
+            raise RuntimeError('session.ssh does not exist in local mode '
+                               '(no SSH connection is made on the submit host)')
+        assert isinstance(self.transport, SSHTransport)
+        return self.transport.ssh, self.transport.ftp
 
     def get_results(self, local_dir: Path, extensions=None):
         """Get the results files from the cluster
@@ -165,14 +163,12 @@ class HPCSession():
         if extensions is None:
             extensions = RES_EXTS
 
-        try:
-            remote_files = self.ftp.listdir(self.remote_dir.as_posix())
-        except FileNotFoundError as err:
-            raise FileNotFoundError(f'Could not find remote directory {self.remote_dir}') from err
+        remote_files = self.transport.listdir(self.remote_dir.as_posix())
 
         files = [Path(f) for f in remote_files if Path(f).suffix in extensions]
         for file in files:
-            self.ftp.get((self.remote_dir / str(file)).as_posix(), local_dir / file)
+            self.transport.get_file((self.remote_dir / str(file)).as_posix(),
+                                    local_dir / file)
 
         return [local_dir / f for f in files]
 
@@ -239,14 +235,15 @@ class HPCSession():
                     LOG.info(f' Uploading: {local_file.as_posix():>100} '
                              f' ({size*1e-3:.1f} MB) '
                              f'--> {remote_file}')
-                    self.ftp.put(tmp_file, remote_file)
+                    self.transport.put_file(tmp_file, remote_file)
                     self.uploaded_files[local_file] = remote_file
                 else:
                     # Copy the file that was already uploaded
                     LOG.info(f' Copying: {self.uploaded_files[local_file]:>100} '
                              f' ({size*1e-3:.1f} MB) '
                              f'--> {remote_file}')
-                    self.ssh.exec_command(f'cp {self.uploaded_files[local_file]} {remote_file}')
+                    self.transport.copy_file(self.uploaded_files[local_file],
+                                             remote_file)
 
         cmd = [self.submit_cmd,
                (self.remote_dir / acf_file.name).as_posix()]
@@ -255,53 +252,53 @@ class HPCSession():
             cmd += [f'--{k}', str(v)]
 
         LOG.info('Running: ' + ' '.join(cmd))
-        _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
-        output = stdout.read().decode()
+        output, stderr = self.transport.exec_argv(cmd)
         LOG.info(f'Output: {output}')
         match = self.backend.re_submission_response.search(output)
         if match is None:
             raise RuntimeError(f'Could not submit {acf_file} to the cluster.\n'
                                f'Output: {output}.\n'
-                               f'Error: {stderr.read().decode()}')
+                               f'Error: {stderr}')
 
         self.job_id = int(match.group(1))
 
     def mkdtemp_remote(self, name=None, n_rand=4):
         """Create a temporary directory on the cluster"""
-        cmd = 'mktemp -d'
-        if self.remote_tempdir:
-            cmd += f' -p {self.remote_tempdir.as_posix()}'
-        if name:
-            cmd += f' {name}.' + 'X' * n_rand
-
-        _, stdout, _ = self.ssh.exec_command(cmd)
-        remote_dir = Path(stdout.read().decode().strip())
-        _,  stdout, stderr = self.ssh.exec_command(f'chmod 775 {remote_dir.as_posix()}')
-
-        if stderr.read().decode() != '' or stdout.read().decode() != '':
-            raise RuntimeError(f'Could not set permissions on {remote_dir}.\n'
-                               f'Error: {stderr.read().decode()}')
-
-        return remote_dir
+        return self.transport.mkdtemp(parent=self.remote_tempdir,
+                                      name=name, n_rand=n_rand)
 
     def get_job_table(self, days=7):
         cmd = self.backend.job_table_command(days=days, username=self.username)
-        _,  stdout, stderr = self.ssh.exec_command(cmd)
+        stdout, stderr = self.transport.exec_shell(cmd)
 
-        stderr = stderr.read().decode()
         if stderr != '':
             raise RuntimeError(f'Error while getting job table: {stderr}')
 
-        df = self.backend.parse_job_table(stdout.read().decode())
+        df = self.backend.parse_job_table(stdout)
 
         return df.sort_values('JobID')
 
     @property
     def last_update(self):
         """Get the last time the any file in `remote_dir` was updated"""
+        if self.transport.name == 'local':
+            # listdir + stat, no `ls` glob: a res-ext glob with no match
+            # makes `ls` exit 2, and LocalTransport raises on nonzero (the
+            # SSH path ignored the exit status and parsed stdout).
+            # Missing extensions are usual (.out), so this must not fail.
+            files = [(f, (Path(self.remote_dir) / f).stat().st_mtime)
+                     for f in self.transport.listdir(self.remote_dir.as_posix())
+                     if Path(f).suffix in RES_EXTS]
+            if not files:
+                raise FileNotFoundError(
+                    f'No results files found in {self.remote_dir}')
+            last_file, mtime = max(files, key=lambda t: t[1])
+            last_updated_file = Path(last_file)
+            dt = datetime.datetime.fromtimestamp(mtime)
+            return dt, last_updated_file
+
         cmd = 'ls -lt ' + ' '.join((Path(self.remote_dir) / f'*{ext}').as_posix() for ext in RES_EXTS)
-        _, stdout, _ = self.ssh.exec_command(cmd)
-        stdout = stdout.read().decode()
+        stdout, _ = self.transport.exec_shell(cmd)
         date = re.search(' +'.join([f'(?P<month>{"|".join(LINUX_MONTHS)})',
                                     r'(?P<day>\d{1,2})',
                                     r'(?P<hour>\d{2}):(?P<minute>\d{2})']),
@@ -317,9 +314,9 @@ class HPCSession():
     def dir_status(self):
         """Get a list of files and stat info"""
         cmd = 'ls -l --time-style=long-iso ' + self.remote_dir.as_posix()
-        _, stdout, _ = self.ssh.exec_command(cmd)
+        stdout, _ = self.transport.exec_shell(cmd)
 
-        return [parse_ls_output(line) for line in stdout.read().decode().splitlines()
+        return [parse_ls_output(line) for line in stdout.splitlines()
                 if line.strip() != '' and not line.startswith('total')]
 
     def get_job_messages(self):
@@ -345,9 +342,9 @@ class HPCSession():
 
     def resubmit_job(self, remote_dir: Path, **kwargs):
         """Resubmit a in a given remote directory"""
-        self.ssh.exec_command(self.backend.cleanup_command(remote_dir))
+        self.transport.exec_cleanup(self.backend, remote_dir)
         try:
-            acf_file = remote_dir / Path(next(f for f in self.ftp.listdir(remote_dir.as_posix())
+            acf_file = remote_dir / Path(next(f for f in self.transport.listdir(remote_dir.as_posix())
                                               if f.endswith('.acf')))
         except StopIteration as err:
             raise StopIteration(f'No ACF file found in {remote_dir}') from err
@@ -356,23 +353,21 @@ class HPCSession():
         for k, v in kwargs.items():
             cmd += [f'--{k}', str(v)]
 
-        _, stdout, stderr = self.ssh.exec_command(' '.join(cmd))
-        output = stdout.read().decode()
+        output, stderr = self.transport.exec_argv(cmd)
 
         LOG.info(f'Output: {output}')
         match = self.backend.re_submission_response.search(output)
         if match is None:
             raise RuntimeError(f'Could not submit {acf_file} to the cluster.\n'
                                f'Output: {output}.\n'
-                               f'Error: {stderr.read().decode()}')
+                               f'Error: {stderr}')
 
         self.job_id = int(match.group(1))
         self.remote_dir = remote_dir
         self.job_name = remote_dir.stem
 
     def close(self):
-        self.ssh.close()
-        self.ftp.close()
+        self.transport.close()
 
 
 def parse_ls_output(line: str) -> Dict[str, Union[str, int, datetime.datetime]]:
@@ -460,19 +455,25 @@ def hpc_session(host=None,
                 job_id=None,
                 remote_dir=None) -> Generator[HPCSession, HPCSession, None]:
 
-    # This will repeatedly try to connect to the HPC if there is a timeout (gives up after 24 hours)
-    from paramiko import AuthenticationException
+    # This will repeatedly try to connect to the HPC if there is a timeout (gives up after 24 hours).
+    # paramiko is imported lazily: local mode (submit host) never makes an
+    # SSH connection and must not import paramiko at all -- even when it is
+    # installed (the deps target on the VM has it). The import happens only
+    # when the failing exception itself came from paramiko, which means
+    # paramiko is already in sys.modules.
     for _ in range(60*24):
         try:
             session = HPCSession(host, username, job_name, job_id, remote_dir)
             break
-        except AuthenticationException as err:
-            if 'timeout' in err.args[0].lower():
-                msg = 'Could not authenticate with the HPC. Retrying...'
-                LOG.warning(msg)
-                time.sleep(60)
-            else:
-                raise err
+        except Exception as err:
+            if type(err).__module__.split('.')[0] == 'paramiko':
+                from paramiko import AuthenticationException
+                if (isinstance(err, AuthenticationException)
+                        and 'timeout' in err.args[0].lower()):
+                    LOG.warning('Could not authenticate with the HPC. Retrying...')
+                    time.sleep(60)
+                    continue
+            raise err
 
     try:
         yield session
@@ -542,7 +543,12 @@ def submit_multi(acf_files: List[Path],
         raise ValueError('The number of ADM files must match the number of ACF files')
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
-    from paramiko import SSHException
+
+    # paramiko lazily: only needed when the transport actually SSHes
+    # (a remote host); local mode (submit host) must not import it at all,
+    # even when installed. Retry catches are built from the exception's
+    # own module origin, same as hpc_session.
+    retry_exceptions: tuple = (ConnectionResetError,)
 
     remote_dirs: List[Path] = []
     job_names: List[str] = []
@@ -562,7 +568,7 @@ def submit_multi(acf_files: List[Path],
                     job_names.append(hpc.job_name)
                     job_ids.append(hpc.job_id)
 
-                except (SSHException, ConnectionResetError) as err:
+                except retry_exceptions as err:
                     # This may happen if the VPN disconnects
                     LOG.warning(f'Could not submit {acf_file} to the cluster. '
                                 f'due to the following error: {err}')
@@ -575,7 +581,6 @@ def submit_multi(acf_files: List[Path],
                     else:
                         # Waited long enough, raise the error
                         raise err
-
                 else:
                     # If successful...
                     LOG.info(f'{acf_file} submitted.')
@@ -807,6 +812,12 @@ def main():
                                    type=str,
                                    default=None,
                                    help='Path to an SSH private key used when no keyring password is set')
+    set_config_parser.add_argument('--transport',
+                                   type=str,
+                                   default=None,
+                                   help=('How to reach the scheduler host: ssh (paramiko) or '
+                                         'local (run directly -- only when this machine IS '
+                                         'the submit host). Default: auto-detect from host.'))
     set_config_parser.set_defaults(command='set_config')
 
     # ----------------------------------------------------------------------------------------------
@@ -923,6 +934,12 @@ def main():
             except ValueError as err:
                 print(f'Error: {err}', file=sys.stderr)
                 sys.exit(2)
+
+        if args.get('transport') is not None \
+                and str(args['transport']).strip().lower() not in ('local', 'ssh'):
+            print(f"Error: invalid transport {args['transport']!r}: expected 'local' or 'ssh'.",
+                  file=sys.stderr)
+            sys.exit(2)
 
         if args['username'] is not None and args['host'] is not None:
             password = getpass(f'Enter password for {args["username"]}@{args["host"]} '

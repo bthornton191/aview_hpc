@@ -1,11 +1,20 @@
-version = '0.4.1'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
-version_notes = ('Review-round-1 fixes to the 0.4.0 Linux in-process path: CLI failures '
-                 '(paramiko.SSHException / socket.gaierror / SystemExit / any BaseException '
-                 'except KeyboardInterrupt) are now written into the captured stderr as a '
-                 'formatted traceback -- the exact frozen-exe contract -- so the '
-                 'aview_hpc.aview_hpc wrapper raises its usual RuntimeError and CDM retry '
-                 'handlers (hpc_jobs.py / base_test.py, which catch only RuntimeError) keep '
-                 'working; and sys.excepthook + root-logger level, which _cli.main() mutates, '
-                 'are saved and restored around every in-process call so the host Adams View '
-                 'process is unchanged after client calls. Unit tests added for both.')
+version = '0.5.0'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
+version_notes = ('LocalTransport: HPCSession remote operations (exec, file '
+                 'put/get/copy, mkdtemp, listdir) moved behind a transport '
+                 'seam. SSHTransport keeps the paramiko behaviour unchanged '
+                 '(paramiko now imported lazily, only on that path); '
+                 'LocalTransport runs scheduler commands as argv lists with '
+                 'subprocess.run(shell=False), moves files with shutil and '
+                 'makes job dirs under the configured remote_tempdir, '
+                 'refusing non-farm-visible roots like /tmp. Selection: new '
+                 "'transport' key in ~/.aview_hpc (local|ssh), else local "
+                 'only when the configured host resolves to this machine. '
+                 'For the sjlsf01 submit-host VM case (sjcvl-thornton), '
+                 'where 0.4.x SSHed from the VM to itself. The session\'s '
+                 'explicit username/key_filename/remote_tempdir are passed '
+                 'through to the transport (SSH argument-over-config '
+                 'precedence restored); in local mode a farm-visible root '
+                 'is mandatory (no silent /tmp fallback) and the root '
+                 'actually used is guarded; last_update uses listdir+stat '
+                 'locally so a missing extension cannot fail it.')
 date = 'October, 8th 2026'
