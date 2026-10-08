@@ -11,3 +11,4 @@ dist
 **/aview_hpc.log
 **/aview.log
 docker
+.venv
