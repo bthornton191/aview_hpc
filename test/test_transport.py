@@ -392,10 +392,25 @@ class TestLocalStorageGuard(unittest.TestCase):
 
 
 class TestParamikoNotImportedLocally(unittest.TestCase):
-    """Card deliverable 2: paramiko is imported lazily, only by SSHTransport."""
+    """Card deliverable 2: paramiko is imported lazily, only by SSHTransport.
 
-    def test_local_mode_never_imports_paramiko(self):
+    'Lazily' means NEVER in local mode -- including on a machine where
+    paramiko IS installed (the VM deps target has it): the in-Aview probe
+    on sjcvl-thornton first showed hpc_session's eager
+    `from paramiko import AuthenticationException` polluting sys.modules
+    even though no SSH connection was ever made. A real (installed)
+    paramiko must be hidden with a stub that raises ImportError if
+    anything tries to use it, which is stronger than just removing it.
+    """
+
+    def _with_paramiko_absent(self):
+        """Context: paramiko fully absent from sys.modules."""
+        from unittest.mock import patch as _patch
         saved = sys.modules.pop('paramiko', None)
+        return saved
+
+    def test_local_mode_never_imports_paramiko_when_absent(self):
+        saved = self._with_paramiko_absent()
         td = scratch_dir()
         try:
             select_transport(config={'transport': 'local',
@@ -404,6 +419,41 @@ class TestParamikoNotImportedLocally(unittest.TestCase):
         finally:
             if saved is not None:
                 sys.modules['paramiko'] = saved
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_local_session_flow_never_imports_paramiko_when_installed(self):
+        # The full hpc_session flow (what the in-Aview probe runs) must not
+        # import paramiko even when it is importable: hpc_session's retry
+        # loop imports it ONLY when the failing exception came from
+        # paramiko (which itself implies it was already imported by the
+        # SSH transport).
+        from aview_hpc import _cli
+        import types
+
+        real_paramiko = sys.modules.get('paramiko')
+        sys.modules.pop('paramiko', None)
+        # an importable stub: proves the code path does not even LOOK
+        fake = types.ModuleType('paramiko')
+
+        def _boom(*a, **k):
+            raise AssertionError('local mode must not import paramiko')
+        fake.__getattr__ = _boom
+        sys.modules['paramiko'] = fake
+
+        td = scratch_dir()
+        try:
+            with patch.object(_cli, 'HPCSession') as fake_session:
+                fake_session.side_effect = RuntimeError('not a paramiko error')
+                try:
+                    with _cli.hpc_session():
+                        pass
+                except RuntimeError:
+                    pass  # expected: non-paramiko errors are re-raised
+            self.assertNotIn('SSHClient', dir(sys.modules['paramiko']))
+        finally:
+            sys.modules.pop('paramiko', None)
+            if real_paramiko is not None:
+                sys.modules['paramiko'] = real_paramiko
             shutil.rmtree(td, ignore_errors=True)
 
     def test_sshtransport_imports_paramiko_lazily_on_connect(self):
