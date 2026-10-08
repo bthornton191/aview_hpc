@@ -574,18 +574,24 @@ class TestReviewRound1(unittest.TestCase):
     def test_ssh_username_argument_wins_over_config(self):
         # The session-level view of item 1: the explicit username must
         # reach the SSH transport (every CLI subcommand takes --username).
+        # get_config is patched in BOTH modules: HPCSession reads it via
+        # aview_hpc._cli (its own imported reference) while select_transport
+        # reads it via aview_hpc.transport -- patching only one lets the
+        # real ~/.aview_hpc leak in (caught on the VM, whose config carries
+        # key_filename).
+        from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
+        fake_cfg = {'host': 'otherhost', 'username': 'cfguser',
+                    'key_filename': '/cfg/key'}
 
         with patch.object(transport_module, '_host_is_local',
                           return_value=False), \
              patch.object(transport_module, 'SSHTransport') as fake_ssh, \
              patch.object(transport_module, 'get_config',
-                          return_value={'host': 'otherhost',
-                                        'username': 'cfguser',
-                                        'key_filename': '/cfg/key'}):
+                          return_value=dict(fake_cfg)), \
+             patch.object(cli_module, 'get_config',
+                          return_value=dict(fake_cfg)):
             HPCSession(host='otherhost', username='explicit_user')
-        # patched on the transport MODULE so HPCSession's imported
-        # reference sees it
         _, kwargs = fake_ssh.call_args
         self.assertEqual(kwargs['username'], 'explicit_user')
         self.assertEqual(kwargs['key_filename'], '/cfg/key')
@@ -645,27 +651,36 @@ class TestReviewRound1(unittest.TestCase):
     def test_local_session_remote_tempdir_argument_is_guarded(self):
         # HPCSession(remote_tempdir='/tmp/not_farm') must NOT construct in
         # local mode: the session's resolved root goes through the guard.
+        # get_config patched in both modules (session + transport), see
+        # test_ssh_username_argument_wins_over_config.
+        from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
+        fake_cfg = {'transport': 'local', 'host': 'sjcvl-thornton',
+                    'remote_tempdir': '/vols/ok_space'}
 
         with patch.object(transport_module, '_host_is_local',
                           return_value=True), \
              patch.object(transport_module, 'get_config',
-                          return_value={'transport': 'local',
-                                        'host': 'sjcvl-thornton',
-                                        'remote_tempdir': '/vols/ok_space'}):
+                          return_value=dict(fake_cfg)), \
+             patch.object(cli_module, 'get_config',
+                          return_value=dict(fake_cfg)):
             with self.assertRaises(RuntimeError):
                 HPCSession(remote_tempdir=Path('/tmp/not_farm'))
 
     def test_local_session_tempdir_argument_wins_over_config(self):
         # The good twin of 2b: a VALID explicit root is the one used.
+        # get_config patched in both modules (session + transport).
+        from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
+        fake_cfg = {'transport': 'local', 'host': 'sjcvl-thornton',
+                    'remote_tempdir': '/vols/other'}
 
         td = scratch_dir()
         try:
             with patch.object(transport_module, 'get_config',
-                              return_value={'transport': 'local',
-                                            'host': 'sjcvl-thornton',
-                                            'remote_tempdir': '/vols/other'}):
+                              return_value=dict(fake_cfg)), \
+                 patch.object(cli_module, 'get_config',
+                              return_value=dict(fake_cfg)):
                 session = HPCSession(remote_tempdir=Path(td))
             self.assertEqual(session.transport.remote_root, Path(td))  # type: ignore[attr-defined]
             session.close()
