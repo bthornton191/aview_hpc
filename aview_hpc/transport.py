@@ -23,10 +23,15 @@ Selection (:func:`select_transport`):
   (FQDN/IP comparison, :func:`_host_is_local`), otherwise ``ssh``.
 
 Storage rule (local mode): job dirs must live on farm-visible storage.
-``LocalTransport.__init__`` refuses a remote root that is ``/tmp`` (or any
-other non-farm location when :data:`FARM_VISIBLE_ROOTS` applies -- see the
-constant) or that does not exist; the error names the configured value and
-the sanctioned roots.  The check is only enforced where the farm layout is
+A remote root is REQUIRED -- with none configured there is no correct
+place for a job dir (the only silent fallback would be the system temp
+dir, exactly what the card forbids), so :class:`LocalTransport` fails
+loudly instead of falling back to ``tempfile.gettempdir()``.
+``_check_remote_root`` then refuses a root that is ``/tmp`` (or any other
+system temp dir) or that does not exist, and it runs on the root the
+session actually uses -- an explicit ``remote_tempdir=`` argument
+included, not just the config value; the error names the offending value
+and the fix.  The farm-layout check is only enforced where the layout is
 actually known (the Cadence layout, ``/vols/<user>_space``); on any other
 host the root must simply exist and not be a system temp dir.
 """
@@ -312,10 +317,23 @@ class LocalTransport(Transport):
     STRIP_CHILD_ENV = ('PYTHONHOME', 'PYTHONPATH')
 
     def __init__(self, remote_root: Optional[Path] = None):
-        self.remote_root = (Path(remote_root)
-                            if remote_root is not None else None)
-        if self.remote_root is not None:
-            self._check_remote_root(self.remote_root)
+        """A farm-visible remote root is mandatory (review round 1, item 2).
+
+        Without one there is nowhere correct to put a job dir: the only
+        silent fallback would be the system temp dir (``/tmp``), which the
+        LSF execution hosts cannot see and the card explicitly forbids.
+        Fail loudly instead, naming the fix.
+        """
+        if remote_root is None:
+            raise RuntimeError(
+                'local transport requires a farm-visible remote root for '
+                'job directories: set remote_tempdir in ~/.aview_hpc (or '
+                'pass remote_tempdir= to HPCSession) to a directory the '
+                'LSF execution hosts can see (e.g. /vols/<user>_space). '
+                'Refusing to fall back to the system temp dir (/tmp), '
+                'where job dirs would be invisible to the farm.')
+        self.remote_root = Path(remote_root)
+        self._check_remote_root(self.remote_root)
 
     @staticmethod
     def _child_env(extra: Optional[dict] = None) -> dict:
@@ -458,11 +476,14 @@ class LocalTransport(Transport):
         path's ``mktemp -d -p <parent> <name>.XXXX``.
         """
         if parent is None:
-            # No configured root: fall back to the system default ONLY on
-            # non-farm layouts; the farm-layout guard lives in __init__,
-            # which always has the configured root on the VM.
-            parent = Path(tempfile.gettempdir())
+            # No explicit parent: the guarded session root, never the
+            # system temp dir -- a job dir there is invisible to the LSF
+            # execution hosts (review round 1, item 2a).
+            parent = self.remote_root
         parent = Path(parent)
+        # Guard the root that is actually used, even when a caller passes
+        # parent= directly (review round 1, item 2b).
+        self._check_remote_root(parent)
         if not parent.is_dir():
             raise RuntimeError(
                 f'Cannot create job directory: {parent.as_posix()} does not '
@@ -513,6 +534,9 @@ def _host_is_local(host: str) -> bool:
 
 
 def select_transport(host: Optional[str] = None,
+                     username: Optional[str] = None,
+                     key_filename: Optional[str] = None,
+                     remote_tempdir: Optional[Path] = None,
                      config: Optional[dict] = None) -> Transport:
     """Pick the transport and log the choice; construct and return it.
 
@@ -524,13 +548,22 @@ def select_transport(host: Optional[str] = None,
     * key missing -> local only when `host` resolves to this machine
       (:func:`_host_is_local`), otherwise ssh.
 
+    ``username``/``key_filename``/``remote_tempdir`` are the SESSION's
+    resolved values (explicit argument, else the config key) and are
+    passed through to the transport: the SSH path keeps the
+    argument-over-config precedence ``HPCSession`` always had (every CLI
+    subcommand takes ``--username``), and local mode guards the root the
+    session will actually use.
+
     The chosen transport (and why) is logged at INFO so a submit log shows
     unambiguously whether SSH was used.
     """
-    if config is None:
-        config = get_config() or {}
-    host = host or config.get('host')
-    key = config.get(TRANSPORT_KEY)
+    cfg = config if config is not None else (get_config() or {})
+    host = host or cfg.get('host')
+    username = username or cfg.get('username')
+    key_filename = key_filename or cfg.get('key_filename')
+    remote_tempdir = remote_tempdir or cfg.get('remote_tempdir')
+    key = cfg.get(TRANSPORT_KEY)
 
     if key is not None and str(key).strip().lower() not in ('local', 'ssh'):
         raise ValueError(
@@ -553,7 +586,10 @@ def select_transport(host: Optional[str] = None,
     LOG.info(f'Chosen transport: {chosen} ({reason})')
 
     if chosen == 'local':
-        return LocalTransport(remote_root=config.get('remote_tempdir'))
+        # The RESOLVED session root (explicit argument or config), not
+        # just the config value: this is the root mkdtemp actually uses,
+        # and LocalTransport requires one (review round 1, item 2).
+        return LocalTransport(remote_root=remote_tempdir)
     return SSHTransport(host=host or '',
-                        username=config.get('username'),
-                        key_filename=config.get('key_filename'))
+                        username=username,
+                        key_filename=key_filename)

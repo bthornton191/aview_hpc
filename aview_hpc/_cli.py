@@ -110,7 +110,14 @@ class HPCSession():
 
         # Transport seam (t_652a2eff): local when running ON the submit
         # host, SSH otherwise.  select_transport logs which one and why.
-        self.transport = select_transport(host=self.host)
+        # The session's RESOLVED username/key_filename/remote_tempdir are
+        # passed through: the SSH path keeps the argument-over-config
+        # precedence every CLI subcommand's --username expects, and local
+        # mode guards the root mkdtemp actually uses (review round 1).
+        self.transport = select_transport(host=self.host,
+                                          username=self.username,
+                                          key_filename=config.get('key_filename'),
+                                          remote_tempdir=self.remote_tempdir)
 
         self.uploaded_files = {}
 
@@ -274,6 +281,22 @@ class HPCSession():
     @property
     def last_update(self):
         """Get the last time the any file in `remote_dir` was updated"""
+        if self.transport.name == 'local':
+            # listdir + stat, no `ls` glob: a res-ext glob with no match
+            # makes `ls` exit 2, and LocalTransport raises on nonzero (the
+            # SSH path ignored the exit status and parsed stdout).
+            # Missing extensions are usual (.out), so this must not fail.
+            files = [(f, (Path(self.remote_dir) / f).stat().st_mtime)
+                     for f in self.transport.listdir(self.remote_dir.as_posix())
+                     if Path(f).suffix in RES_EXTS]
+            if not files:
+                raise FileNotFoundError(
+                    f'No results files found in {self.remote_dir}')
+            last_file, mtime = max(files, key=lambda t: t[1])
+            last_updated_file = Path(last_file)
+            dt = datetime.datetime.fromtimestamp(mtime)
+            return dt, last_updated_file
+
         cmd = 'ls -lt ' + ' '.join((Path(self.remote_dir) / f'*{ext}').as_posix() for ext in RES_EXTS)
         stdout, _ = self.transport.exec_shell(cmd)
         date = re.search(' +'.join([f'(?P<month>{"|".join(LINUX_MONTHS)})',
