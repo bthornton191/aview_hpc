@@ -81,28 +81,37 @@ class TestTransportSelection(unittest.TestCase):
 
     def test_explicit_ssh_key_wins_even_on_local_host(self):
         # An explicit 'ssh' beats host==self auto-detection: a submit host
-        # whose admin insists on the SSH path keeps it.
+        # whose admin insists on the SSH path keeps it. _connect is patched
+        # (not just __init__): patching __init__ alone leaves the real
+        # __init__-> _connect chain running, which hits DNS.
         with patch.object(transport_module, '_host_is_local',
                           return_value=True), \
-             patch.object(SSHTransport, '__init__', return_value=None) as init:
-            select_transport(config={'transport': 'ssh', 'host': 'anything'})
-        init.assert_called_once()
+             patch.object(SSHTransport, '_connect', return_value=(None, None)):
+            t = select_transport(config={'transport': 'ssh', 'host': 'anything'})
+        self.assertIsInstance(t, SSHTransport)
+        self.assertIsNone(t.ssh)  # type: ignore[attr-defined]
 
     def test_missing_key_host_is_self(self):
         # The VM case: config host resolves to this machine -> local.
-        with patch.object(transport_module, '_host_is_local',
-                          return_value=True), \
-             patch.object(LocalTransport, '__init__', return_value=None) as init:
-            select_transport(config={'host': 'sjcvl-thornton', 'remote_tempdir': '/x'})
-        init.assert_called_once()
+        td = scratch_dir()
+        try:
+            with patch.object(transport_module, '_host_is_local',
+                              return_value=True), \
+                 patch.object(LocalTransport, '_check_remote_root',
+                              return_value=None):
+                t = select_transport(config={'host': 'sjcvl-thornton',
+                                             'remote_tempdir': td})
+            self.assertIsInstance(t, LocalTransport)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
 
     def test_missing_key_host_is_not_self(self):
         # The Windows dev-box case: remote host -> ssh.
         with patch.object(transport_module, '_host_is_local',
                           return_value=False), \
-             patch.object(SSHTransport, '__init__', return_value=None) as init:
-            select_transport(config={'host': 'sjlsf01.cadence.com'})
-        init.assert_called_once()
+             patch.object(SSHTransport, '_connect', return_value=(None, None)):
+            t = select_transport(config={'host': 'sjlsf01.cadence.com'})
+        self.assertIsInstance(t, SSHTransport)
 
     def test_bogus_key_raises(self):
         with self.assertRaises(ValueError):

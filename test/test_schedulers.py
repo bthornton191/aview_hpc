@@ -431,12 +431,16 @@ class TestLSFScript(unittest.TestCase):
             self.assertIn('would become the job COMMAND', str(ctx.exception))
 
     def test_project_required(self):
+        # _main_env isolates env + config: without it the parser falls back
+        # to the REAL ~/.aview_hpc on the running machine, and on the LSF
+        # submit host that file carries a project key -- main() then runs a
+        # REAL bsub instead of exiting (observed on sjcvl-thornton
+        # 2026-10-08: jobs 566843/566932/567142 EXITed from this test).
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--adams_home', '/a', '--license', '1700@x']
-            with patch.object(sys, 'argv', argv):
-                with self.assertRaises(SystemExit) as ctx:
-                    lsf_script.main()
+            with self.assertRaises(SystemExit) as ctx:
+                self._main_env(argv, tmpdir=tmpdir, config={})
             self.assertEqual(ctx.exception.code, 2)
 
     def test_project_format_validated(self):
@@ -444,9 +448,8 @@ class TestLSFScript(unittest.TestCase):
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--project', 'no-colons',
                     '--adams_home', '/a', '--license', '1700@x']
-            with patch.object(sys, 'argv', argv):
-                with self.assertRaises(SystemExit):
-                    lsf_script.main()
+            with self.assertRaises(SystemExit):
+                self._main_env(argv, tmpdir=tmpdir, config={})
 
     def _main_env(self, argv, env=None, config=None, tmpdir=None):
         """Run lsf.py main() in dry-run with a controlled env + config file."""
@@ -527,13 +530,14 @@ class TestLSFScript(unittest.TestCase):
             self.assertEqual(ctx.exception.code, 2)
 
     def test_adams_home_required(self):
+        # Same isolation as test_project_required: the machine's real
+        # ~/.aview_hpc can supply adams_home and turn this into a real bsub.
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--project', 'MSC:2023.4:NNL:SIMULATION',
                     '--license', '1700@x']
-            with patch.object(sys, 'argv', argv):
-                with self.assertRaises(SystemExit):
-                    lsf_script.main()
+            with self.assertRaises(SystemExit):
+                self._main_env(argv, tmpdir=tmpdir, config={})
 
 
 if __name__ == '__main__':
