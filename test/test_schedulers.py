@@ -7,10 +7,12 @@ captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
 """
 import importlib.util
 import json
+import logging
 import os
 import re
 import shlex
 import sys
+import types
 import unittest
 from io import StringIO
 from pathlib import Path
@@ -538,6 +540,308 @@ class TestLSFScript(unittest.TestCase):
                     '--license', '1700@x']
             with self.assertRaises(SystemExit):
                 self._main_env(argv, tmpdir=tmpdir, config={})
+
+
+class TestSubmitKwargTranslation(unittest.TestCase):
+    """Scheduler backends translate generic submit kwargs (mem/nice/...) into
+    the submit script's own vocabulary BEFORE they become --options.
+
+    Background: the CDM qual harness passes mem=JOB_MEM_GB ('32G') and
+    nice=MAX_NICE (2147483645) -- sbatch-era options from the retired DEWET
+    Slurm cluster. hpc_scripts/lsf.py correctly refuses unknown options
+    (trailing words become the bsub job COMMAND line), which killed the
+    first farm-backed Linux CI run (37824964058, 2026-10-08). The fix is
+    HERE, in the scheduler backend, so every caller stays scheduler-agnostic
+    and the same client works on Windows+Slurm, Windows+LSF and Linux+LSF
+    purely via ~/.aview_hpc.
+    """
+
+    # The exact kwargs the CDM qual harness sends (hpc_jobs.py run_on_hpc /
+    # base_test.py submit block): L184-185 mem=JOB_MEM_GB, nice=MAX_NICE.
+    CDM_KWARGS = {'mins': 1000, 'mem': '32G', 'nice': 2147483645}
+
+    def test_slurm_backend_is_byte_identical(self):
+        """Slurm passthrough is pinned: identity for known AND unknown kwargs,
+        same dict object semantics (no copy/rename/drop/reorder)."""
+        backend = get_scheduler('slurm')
+        original = dict(self.CDM_KWARGS)
+        translated = backend.translate_submit_kwargs(self.CDM_KWARGS)
+        self.assertEqual(translated, original)
+
+    def test_slurm_identity_for_empty_and_unknown(self):
+        backend = get_scheduler('slurm')
+        self.assertEqual(backend.translate_submit_kwargs({}), {})
+        weird = {'queue': 'gpu', 'totally_unknown': 'x'}
+        self.assertEqual(backend.translate_submit_kwargs(weird), weird)
+
+    def test_lsf_translates_cdm_kwargs(self):
+        """The exact run-37824964058 kwargs: mem 32G -> mem_mb 32768, nice
+        dropped, everything else passed through."""
+        backend = get_scheduler('lsf')
+        translated = backend.translate_submit_kwargs(self.CDM_KWARGS)
+        self.assertEqual(translated, {'mins': 1000, 'mem_mb': 32768})
+
+    def test_lsf_drops_nice_only(self):
+        backend = get_scheduler('lsf')
+        translated = backend.translate_submit_kwargs({'nice': 2147483645})
+        self.assertEqual(translated, {})
+        # nice is dropped even when mem is absent
+        self.assertEqual(backend.translate_submit_kwargs({'mins': 5, 'nice': 10}),
+                         {'mins': 5})
+
+    def test_lsf_dropped_nice_logged_at_debug(self):
+        backend = get_scheduler('lsf')
+        records = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        logger = logging.getLogger('test_lsf_drop_log')
+        logger.setLevel(logging.DEBUG)
+        handler = _Capture()
+        logger.addHandler(handler)
+        try:
+            backend.translate_submit_kwargs({'mem': '32G', 'nice': 2147483645},
+                                            logger=logger)
+        finally:
+            logger.removeHandler(handler)
+
+        drops = [r for r in records if r.levelno == logging.DEBUG and 'nice' in r.getMessage()]
+        self.assertTrue(drops, 'expected a DEBUG record naming the dropped nice kwarg')
+
+    def test_lsf_mem_unit_handling(self):
+        backend = get_scheduler('lsf')
+        cases = {'32G': 32768, '32g': 32768, '32GiB': 32768, '32': 32,
+                 '512M': 512, '512m': 512, '2048K': 2, '1.5g': 1536,
+                 ' 8G ': 8192}
+        for value, expected_mb in cases.items():
+            self.assertEqual(backend.translate_submit_kwargs({'mem': value})['mem_mb'],
+                             expected_mb, value)
+
+    def test_lsf_mem_bad_value_raises(self):
+        """A mem value that is not Slurm syntax must raise, not silently
+        forward garbage units to the farm."""
+        backend = get_scheduler('lsf')
+        with self.assertRaises(ValueError):
+            backend.translate_submit_kwargs({'mem': 'thirty-two gig'})
+
+    def test_lsf_unknown_kwargs_still_flow_through(self):
+        """Unknown kwargs reach the submit script so its unknown-argument
+        guard fires -- translation must not swallow genuinely unsupported
+        options (that guard is load-bearing; card constraint: don't weaken
+        it)."""
+        backend = get_scheduler('lsf')
+        translated = backend.translate_submit_kwargs({'mem': '32G', 'banana': 'yes'})
+        self.assertEqual(translated, {'mem_mb': 32768, 'banana': 'yes'})
+
+    def test_translation_changes_nothing_without_mem_or_nice(self):
+        for name in ('slurm', 'lsf'):
+            backend = get_scheduler(name)
+            kwargs = {'mins': 720, 'queue': 'lnx64'}
+            self.assertEqual(backend.translate_submit_kwargs(kwargs), kwargs)
+
+    def test_base_backend_identity(self):
+        """The base class default is identity (backends without translation
+        needs inherit it; the DEWET slurm script's frozen behavior is the
+        precedent)."""
+        from aview_hpc.schedulers import SchedulerBackend
+        kwargs = {'mem': '32G', 'nice': 1}
+        self.assertEqual(SchedulerBackend().translate_submit_kwargs(kwargs), kwargs)
+
+
+class TestLSFMemMb(unittest.TestCase):
+    """hpc_scripts/lsf.py --mem_mb: the translated memory request renders as
+    rusage[mem=<MB>] inside the ONE -R (multiple -R are rejected by this
+    LSF; see build_bsub_command)."""
+
+    def test_rusage_merged_into_single_r(self):
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8,
+            mem_mb=32768)
+        self.assertEqual(cmd.count(' -R '), 1)
+        self.assertIn(
+            "-R 'rusage[mem=32768] select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9] "
+            "span[hosts=1]'", cmd)
+
+    def test_mem_mb_without_res_req(self):
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='', n_cpus=8, mem_mb=32768)
+        self.assertEqual(cmd.count(' -R '), 1)
+        self.assertIn("-R 'rusage[mem=32768] span[hosts=1]'", cmd)
+
+    def test_explicit_rusage_in_res_req_wins(self):
+        """A site res_req that already carries rusage[ is never overridden or
+        doubled."""
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='rusage[mem=1024] select[x]', n_cpus=8, mem_mb=32768)
+        self.assertEqual(cmd.count(' -R '), 1)
+        self.assertIn("-R 'rusage[mem=1024] select[x] span[hosts=1]'", cmd)
+        self.assertNotIn('32768', cmd)
+
+    def test_no_mem_mb_unchanged(self):
+        """mem_mb=None keeps the command byte-identical to the pre-0.4.2
+        form (regression pin for existing callers)."""
+        with_mem = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=720,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req='select[x]', n_cpus=8, mem_mb=None)
+        self.assertNotIn('rusage', with_mem)
+        self.assertEqual(with_mem.count(' -R '), 1)
+
+    def test_mem_mb_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            lsf_script.build_bsub_command(
+                script_file='myjob_0.lsf', job_name='myjob', mins=720,
+                queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+                res_req='select[x]', n_cpus=8, mem_mb=0)
+
+    def test_mem_mb_cli_dry_run_end_to_end(self):
+        """--mem_mb on the real argv path: parsed, forwarded to submit(), and
+        rendered in the dry-run bsub line."""
+        with TemporaryDirectory() as tmpdir:
+            writer = TestLSFScript()
+            acf = writer._write_model(tmpdir)
+            argv = ['lsf.py', str(acf), '--mins', '5',
+                    '--project', 'MSC:2023.4:NNL:SIMULATION',
+                    '--adams_home', '/home/thornton/adams/2023_4_1',
+                    '--license', '1700@sjflex5', '--mem_mb', '32768',
+                    '--dry_run']
+            with patch.object(sys, 'argv', argv), patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+            output = out.getvalue()
+
+        bsub_line = next(l for l in output.splitlines()
+                         if l.startswith('DRY-RUN: would run:'))
+        self.assertEqual(bsub_line.count(' -R '), 1)
+        self.assertIn('rusage[mem=32768]', bsub_line)
+
+    def test_mem_kwarg_still_rejected_by_lsf_script(self):
+        """The generic --mem (untranslated) must STILL be refused by lsf.py:
+        the unknown-argument guard is the backstop for submit hosts whose
+        aview_hpc predates translation (card constraint: don't weaken it)."""
+        with TemporaryDirectory() as tmpdir:
+            writer = TestLSFScript()
+            acf = writer._write_model(tmpdir)
+            argv = ['lsf.py', str(acf), '--mins', '5',
+                    '--project', 'MSC:2023.4:NNL:SIMULATION',
+                    '--adams_home', '/a', '--license', '1700@x',
+                    '--mem', '32G', '--nice', '2147483645', '--dry_run']
+            with patch.object(sys, 'argv', argv):
+                with self.assertRaises(SystemExit) as ctx:
+                    lsf_script.main()
+            self.assertIn('would become the job COMMAND', str(ctx.exception))
+            self.assertIn('--mem', str(ctx.exception))
+
+
+class TestSessionAppliesTranslation(unittest.TestCase):
+    """HPCSession.submit/resubmit_job run kwargs through the backend's
+    translate_submit_kwargs before building the --option list. Verified
+    without a live host: a stubbed backend records what the SSH layer would
+    have executed."""
+
+    def _make_session(self, scheduler_name):
+        from aview_hpc._cli import HPCSession
+        session = HPCSession.__new__(HPCSession)
+        session.backend = get_scheduler(scheduler_name)
+        session.submit_cmd = '/home/thornton/scripts/lsf.py'
+        # Attributes __init__ would have set; skipped by __new__.
+        session.job_name = None
+        session.job_id = None
+        session.remote_dir = None
+        return session
+
+    @staticmethod
+    def _chan(text: str):
+        """A minimal paramiko-like channel: read() returns bytes."""
+        return types.SimpleNamespace(read=lambda: text.encode())
+
+    def test_submit_lsf_translates_before_forwarding(self):
+        session = self._make_session('lsf')
+
+        forwarded = {}
+
+        def fake_exec(cmd):
+            forwarded['cmd'] = cmd
+            return (None, self._chan('Job <530967> is submitted to queue lnx64'),
+                    self._chan(''))
+
+        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
+        session.ftp = types.SimpleNamespace(
+            put=lambda *a, **k: None,
+            listdir=lambda d: [])
+        session.uploaded_files = {}
+
+        # Bypass the upload machinery: point at an existing acf/adm pair so
+        # the file-copy loop runs without a real SFTP channel.
+        models = Path(__file__).parent / 'models'
+        acf = models / 'test.acf'
+        adm = models / 'test.adm'
+        session.mkdtemp_remote = lambda name=None, n_rand=4: Path('/remote/wd')
+
+        session.submit(acf_file=acf, adm_file=adm,
+                       mins=1000, mem='32G', nice=2147483645)
+
+        cmd = forwarded['cmd']
+        self.assertIn('--mem_mb 32768', cmd)
+        # No untranslated --mem / --nice tokens ('--mem_mb' contains the
+        # substring '--mem', so split into tokens first).
+        tokens = cmd.split()
+        self.assertNotIn('--mem', tokens)
+        self.assertNotIn('--nice', tokens)
+        self.assertNotIn('2147483645', cmd)
+
+    def test_submit_slurm_forwards_verbatim(self):
+        session = self._make_session('slurm')
+
+        forwarded = {}
+
+        def fake_exec(cmd):
+            forwarded['cmd'] = cmd
+            return (None, self._chan('Submitted batch job 4242'),
+                    self._chan(''))
+
+        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
+        session.ftp = types.SimpleNamespace(
+            put=lambda *a, **k: None,
+            listdir=lambda d: [])
+        session.uploaded_files = {}
+
+        models = Path(__file__).parent / 'models'
+        session.mkdtemp_remote = lambda name=None, n_rand=4: Path('/remote/wd')
+        session.submit(acf_file=models / 'test.acf', adm_file=models / 'test.adm',
+                       mins=1000, mem='32G', nice=2147483645)
+
+        cmd = forwarded['cmd']
+        self.assertIn('--mem 32G', cmd)
+        self.assertIn('--nice 2147483645', cmd)
+
+    def test_resubmit_lsf_translates_before_forwarding(self):
+        session = self._make_session('lsf')
+
+        forwarded = {}
+
+        def fake_exec(cmd):
+            forwarded['cmd'] = cmd
+            return (None, self._chan('Job <530968> is submitted to queue lnx64'),
+                    self._chan(''))
+
+        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
+        session.ftp = types.SimpleNamespace(
+            listdir=lambda d: ['myjob.acf'])
+
+        session.resubmit_job(Path('/remote/wd'), mins=720, mem='32G',
+                             nice=2147483645)
+
+        cmd = forwarded['cmd']
+        self.assertIn('--mem_mb 32768', cmd)
+        self.assertNotIn('--nice', cmd)
 
 
 if __name__ == '__main__':

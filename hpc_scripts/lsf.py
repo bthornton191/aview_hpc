@@ -24,6 +24,9 @@ optional arguments:
   --ld_library_path P   Optional LD_LIBRARY_PATH for the solver
                         (can also be supplied via $ADAMS_LD_LIBRARY_PATH)
   --email EMAIL         bsub -u value (default: noemail)
+  --mem_mb MEM_MB       Memory request in MB -> rusage[mem=<MB>] inside the
+                        single -R (aview_hpc's LSF backend sends this for the
+                        generic `mem` submit kwarg)
   --dry_run             Print the bsub command line and the job script
                         instead of submitting
 
@@ -160,7 +163,8 @@ def build_job_script(acf_file: Path, license_file: str, adams_home: str,
 
 def build_bsub_command(script_file, job_name: str, mins: int, queue: str,
                        project: str, res_req: str, n_cpus: int,
-                       email: str = 'noemail', bsub: str = BSUB) -> str:
+                       email: str = 'noemail', mem_mb: int = None,
+                       bsub: str = BSUB) -> str:
     """Build the (shell-quoted) bsub command line as a single string.
 
     The resource requirement and ``span[hosts=1]`` are joined into ONE ``-R``
@@ -171,12 +175,27 @@ def build_bsub_command(script_file, job_name: str, mins: int, queue: str,
     ``span[`` section is passed through as-is (no duplicate span appended);
     an empty/None ``res_req`` degrades to ``span[hosts=1]`` alone.
 
+    ``mem_mb`` (integer megabytes, from aview_hpc's LSF backend
+    ``translate_submit_kwargs`` -- the generic Slurm-syntax ``mem`` kwarg
+    translated before it reaches this script) is rendered as
+    ``rusage[mem=<MB>]`` and PREPENDED into the same single ``-R``
+    (``rusage[mem=32768] select[...] span[hosts=1]``). LSF accepts select/
+    rusage/span sections in one -R; a second ``-R`` would be rejected.
+    A ``res_req`` that already carries its own ``rusage[`` section wins --
+    an explicit site resource string is never silently overridden.
+
     Unlike ``sbatch``, bsub has no script-file argument: anything trailing the
     options is treated as the job COMMAND line. The job script is therefore
     fed via stdin redirection (live-verified accepted, 2026-10-01) — and
     nothing may be appended after the redirect.
     """
     res_req = str(res_req or '').strip()
+    if mem_mb is not None:
+        mem_mb = int(mem_mb)
+        if mem_mb <= 0:
+            raise ValueError('--mem_mb must be a positive integer')
+        if 'rusage[' not in res_req:
+            res_req = ' '.join(p for p in (f'rusage[mem={mem_mb}]', res_req) if p)
     combined_res_req = (res_req if 'span[' in res_req
                         else ' '.join(p for p in (res_req, 'span[hosts=1]') if p))
     cmd = [bsub,
@@ -196,7 +215,7 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
            project: str = None, res_req: str = DEFAULT_RES_REQ,
            adams_home: str = None, license_file: str = None,
            ld_library_path: str = None, email: str = 'noemail',
-           dry_run: bool = False, args: list = None):
+           mem_mb: int = None, dry_run: bool = False, args: list = None):
     job_name = acf_file.stem
     n_cpus = get_n_cpus(get_adm_from_acf(acf_file))
 
@@ -220,7 +239,7 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
 
         cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
                                  project=project, res_req=res_req,
-                                 n_cpus=n_cpus, email=email)
+                                 n_cpus=n_cpus, email=email, mem_mb=mem_mb)
 
         if dry_run:
             print(f'DRY-RUN: would write job script {script_file}:')
@@ -260,6 +279,11 @@ def main():
     parser = argparse.ArgumentParser(
         usage='%(prog)s <acf_file> [options]',
         description=__doc__,
+        # No prefix abbreviation: a client sending an untranslated option
+        # (e.g. Slurm-era --mem) must hit the explicit "Unsupported arguments"
+        # guard with the option NAMED, not die on an accidental prefix match
+        # against --mem_mb/--mins with a confusing "invalid int value".
+        allow_abbrev=False,
         formatter_class=argparse.RawTextHelpFormatter
         )
     parser.add_argument('acf_file', type=str, help='Path to the ACF file')
@@ -286,8 +310,12 @@ def main():
                         help='Optional LD_LIBRARY_PATH for the solver')
     parser.add_argument('--email', type=str, default='noemail',
                         help='bsub -u value (default: noemail)')
+    parser.add_argument('--mem_mb', type=int, default=None,
+                        help='Memory request in MB, rendered as rusage[mem=<MB>] '
+                             'inside the single -R (from aview_hpc translate_'
+                             'submit_kwargs; the generic mem kwarg)')
     parser.add_argument('--dry_run', action='store_true',
-                        help='Print the bsub command line and job script instead of submitting')
+                        help='Print the bsub command line and the job script instead of submitting')
     args, other_args = parser.parse_known_args()
 
     if not args.project:
@@ -310,6 +338,7 @@ def main():
            res_req=args.res_req, adams_home=args.adams_home,
            license_file=args.license_file,
            ld_library_path=args.ld_library_path, email=args.email,
+           mem_mb=args.mem_mb,
            dry_run=args.dry_run, args=other_args)
 
 
