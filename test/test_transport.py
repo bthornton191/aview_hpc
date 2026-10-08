@@ -555,5 +555,218 @@ class TestSSHPathUnchanged(unittest.TestCase):
         self.assertEqual(forbidden, [])
 
 
+class TestReviewRound1(unittest.TestCase):
+    """nnl-reviewer round-1 findings on PR #4 (2026-10-08), all fixed.
+
+    Item 1: the SSH path dropped the session's explicit username (it used
+    config['username'] only); HPCSession(host, username='explicit_user')
+    built SSHTransport(username='cfguser').  Items 2a/2b: local mode
+    silently fell back to the system temp dir when no root was configured,
+    and never guarded an explicit remote_tempdir= argument.  Item 3
+    (recommended): last_update's res-ext glob fails in local mode when any
+    extension is absent.
+    """
+
+    # ------------------------------------------------------------------
+    # Item 1: username/key_filename passthrough on the SSH path
+    # ------------------------------------------------------------------
+
+    def test_ssh_username_argument_wins_over_config(self):
+        # The session-level view of item 1: the explicit username must
+        # reach the SSH transport (every CLI subcommand takes --username).
+        from aview_hpc._cli import HPCSession
+
+        with patch.object(transport_module, '_host_is_local',
+                          return_value=False), \
+             patch.object(transport_module, 'SSHTransport') as fake_ssh, \
+             patch.object(transport_module, 'get_config',
+                          return_value={'host': 'otherhost',
+                                        'username': 'cfguser',
+                                        'key_filename': '/cfg/key'}):
+            HPCSession(host='otherhost', username='explicit_user')
+        # patched on the transport MODULE so HPCSession's imported
+        # reference sees it
+        _, kwargs = fake_ssh.call_args
+        self.assertEqual(kwargs['username'], 'explicit_user')
+        self.assertEqual(kwargs['key_filename'], '/cfg/key')
+
+    def test_ssh_username_falls_back_to_config(self):
+        with patch.object(transport_module, '_host_is_local',
+                          return_value=False), \
+             patch.object(transport_module, 'SSHTransport') as fake_ssh, \
+             patch.object(transport_module, 'get_config',
+                          return_value={'host': 'otherhost',
+                                        'username': 'cfguser',
+                                        'key_filename': '/cfg/key'}):
+            select_transport(host='otherhost')
+        _, kwargs = fake_ssh.call_args
+        self.assertEqual(kwargs['username'], 'cfguser')
+        self.assertEqual(kwargs['key_filename'], '/cfg/key')
+
+    def test_ssh_username_via_select_transport_argument(self):
+        # select_transport's own argument also wins over the config value.
+        with patch.object(transport_module, '_host_is_local',
+                          return_value=False), \
+             patch.object(transport_module, 'SSHTransport') as fake_ssh, \
+             patch.object(transport_module, 'get_config',
+                          return_value={'host': 'otherhost',
+                                        'username': 'cfguser'}):
+            select_transport(host='otherhost', username='arg_user',
+                             key_filename='/arg/key')
+        _, kwargs = fake_ssh.call_args
+        self.assertEqual(kwargs['username'], 'arg_user')
+        self.assertEqual(kwargs['key_filename'], '/arg/key')
+
+    # ------------------------------------------------------------------
+    # Item 2a: a root is MANDATORY in local mode
+    # ------------------------------------------------------------------
+
+    def test_local_without_any_root_raises(self):
+        # No config remote_tempdir and no argument: must fail loudly, not
+        # fall back to tempfile.gettempdir() (== /tmp on Linux).
+        with patch.object(transport_module, 'get_config',
+                          return_value={'transport': 'local',
+                                        'host': 'sjcvl-thornton'}):
+            with self.assertRaises(RuntimeError) as ctx:
+                select_transport()
+        self.assertIn('remote_tempdir', str(ctx.exception))
+        self.assertIn('farm-visible', str(ctx.exception))
+
+    def test_localtransport_requires_root(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            LocalTransport(remote_root=None)
+        self.assertIn('remote_tempdir', str(ctx.exception))
+        self.assertIn('farm-visible', str(ctx.exception))
+
+    # ------------------------------------------------------------------
+    # Item 2b: the root actually used is guarded (explicit argument)
+    # ------------------------------------------------------------------
+
+    def test_local_session_remote_tempdir_argument_is_guarded(self):
+        # HPCSession(remote_tempdir='/tmp/not_farm') must NOT construct in
+        # local mode: the session's resolved root goes through the guard.
+        from aview_hpc._cli import HPCSession
+
+        with patch.object(transport_module, '_host_is_local',
+                          return_value=True), \
+             patch.object(transport_module, 'get_config',
+                          return_value={'transport': 'local',
+                                        'host': 'sjcvl-thornton',
+                                        'remote_tempdir': '/vols/ok_space'}):
+            with self.assertRaises(RuntimeError):
+                HPCSession(remote_tempdir=Path('/tmp/not_farm'))
+
+    def test_local_session_tempdir_argument_wins_over_config(self):
+        # The good twin of 2b: a VALID explicit root is the one used.
+        from aview_hpc._cli import HPCSession
+
+        td = scratch_dir()
+        try:
+            with patch.object(transport_module, 'get_config',
+                              return_value={'transport': 'local',
+                                            'host': 'sjcvl-thornton',
+                                            'remote_tempdir': '/vols/other'}):
+                session = HPCSession(remote_tempdir=Path(td))
+            self.assertEqual(session.transport.remote_root, Path(td))  # type: ignore[attr-defined]
+            session.close()
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_mkdtemp_guarded_parent_argument(self):
+        # Direct LocalTransport.mkdtemp(parent=/tmp/...) must be refused
+        # even though __init__ saw a good root.
+        td = scratch_dir()
+        try:
+            t = LocalTransport(remote_root=Path(td))
+            with self.assertRaises(RuntimeError):
+                t.mkdtemp(parent=Path('/tmp/not_farm'), name='job')
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_mkdtemp_without_parent_uses_session_root_not_tmp(self):
+        # mkdtemp(parent=None) must use the guarded session root, never
+        # the system temp dir.
+        td = scratch_dir()
+        try:
+            t = LocalTransport(remote_root=Path(td))
+            d = t.mkdtemp(parent=None, name='job')
+            try:
+                self.assertEqual(d.parent, Path(td))
+                self.assertTrue(str(d).startswith(str(td)))
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    # ------------------------------------------------------------------
+    # Item 3 (recommended): last_update in local mode
+    # ------------------------------------------------------------------
+
+    def test_last_update_local_missing_extension(self):
+        # The reviewer's repro: a dir holding only .res/.msg (no .out)
+        # used to die with "exited with status 2"; listdir+stat must work.
+        from aview_hpc._cli import HPCSession
+
+        td = scratch_dir()
+        job_dir = Path(td) / 'job.XYZ1'
+        job_dir.mkdir()
+        try:
+            (job_dir / 'r.res').write_text('res')
+            (job_dir / 'r.msg').write_text('msg')
+            # r.res old, r.msg later: last_update must pick r.msg
+            os.utime(job_dir / 'r.res', (1000000000, 1000000000))
+            os.utime(job_dir / 'r.msg', (2000000000, 2000000000))
+
+            session = object.__new__(HPCSession)  # no config read
+            session.transport = LocalTransport(remote_root=Path(td))
+            session.remote_dir = job_dir
+
+            dt, last_file = session.last_update
+            self.assertEqual(last_file, Path('r.msg'))
+            self.assertEqual(dt.timestamp(), 2000000000.0)
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_last_update_local_no_results_files(self):
+        from aview_hpc._cli import HPCSession
+
+        td = scratch_dir()
+        job_dir = Path(td) / 'job.XYZ2'
+        job_dir.mkdir()
+        try:
+            session = object.__new__(HPCSession)
+            session.transport = LocalTransport(remote_root=Path(td))
+            session.remote_dir = job_dir
+
+            with self.assertRaises(FileNotFoundError):
+                session.last_update
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_last_update_ssh_path_unchanged(self):
+        # The SSH branch keeps its historical ls -lt glob command.
+        from aview_hpc._cli import HPCSession
+        from aview_hpc.transport import Transport
+
+        sent = []
+
+        class _FakeSSHTransport(Transport):
+            name = 'ssh'
+
+            def exec_shell(self, command):
+                sent.append(command)
+                return ('-rw-r--r-- 1 u g 39300 Oct  8 10:11 r.res\n', '')
+
+        session = object.__new__(HPCSession)
+        session.transport = _FakeSSHTransport()
+        session.remote_dir = Path('/vols/x/job.abc1')
+
+        dt, last_file = session.last_update
+        self.assertEqual(last_file, Path('r.res'))
+        self.assertIn('ls -lt ', sent[0])
+        self.assertIn('*.res', sent[0])
+        self.assertIn('*.out', sent[0])
+
+
 if __name__ == '__main__':
     unittest.main()
