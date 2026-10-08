@@ -164,6 +164,32 @@ class TestPosixDispatch(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 run_cli(['set_config', '--scheduler', 'bogus'])
 
+    def test_run_cli_posix_log_output_does_not_leak_to_stderr(self):
+        # The CLI's logging handlers write to stderr by default; the
+        # wrapper treats non-UserWarning stderr as a hard error, so log
+        # records must be captured separately (VM probe t6 regression:
+        # a WARNING about the keyring timeout leaked and raised).
+        import logging as _logging
+        handler = _logging.StreamHandler(sys.stderr)
+        root = _logging.getLogger()
+        root.addHandler(handler)
+        try:
+            def noisy_main():
+                _logging.getLogger('aview_hpc.test').warning(
+                    'keyring lookup did not answer (headless)')
+                print('{"ok": true}')
+
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', noisy_main):
+                out, err = run_cli(['version'])
+        finally:
+            root.removeHandler(handler)
+
+        self.assertIn('{"ok": true}', out)
+        self.assertNotIn('keyring lookup', err)
+        # handler restored to real stderr afterwards
+        self.assertIs(handler.stream, sys.stderr)
+
     def test_run_cli_version_posix_is_package_version(self):
         with patch.object(platform, 'IS_WINDOWS', False), \
              patch('aview_hpc._cli.main', _FakeCliMain()):
