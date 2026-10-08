@@ -167,12 +167,17 @@ class TestPosixDispatch(unittest.TestCase):
     def test_run_cli_posix_log_output_does_not_leak_to_stderr(self):
         # The CLI's logging handlers write to stderr by default; the
         # wrapper treats non-UserWarning stderr as a hard error, so log
-        # records must be captured separately (VM probe t6 regression:
-        # a WARNING about the keyring timeout leaked and raised).
+        # records must be captured separately (VM probe t6/t7 regression:
+        # with NO handlers configured -- the case inside Adams View --
+        # logging falls to logging.lastResort, which writes straight to
+        # sys.stderr and was captured as a process error).
         import logging as _logging
-        handler = _logging.StreamHandler(sys.stderr)
         root = _logging.getLogger()
-        root.addHandler(handler)
+
+        # Case 1: no handlers at all (the in-Aview situation).
+        saved_handlers = list(root.handlers)
+        for h in saved_handlers:
+            root.removeHandler(h)
         try:
             def noisy_main():
                 _logging.getLogger('aview_hpc.test').warning(
@@ -183,11 +188,25 @@ class TestPosixDispatch(unittest.TestCase):
                  patch('aview_hpc._cli.main', noisy_main):
                 out, err = run_cli(['version'])
         finally:
+            for h in saved_handlers:
+                root.addHandler(h)
+
+        self.assertIn('{"ok": true}', out)
+        self.assertNotIn('keyring lookup', err)
+        self.assertEqual(root.handlers, saved_handlers)
+
+        # Case 2: an existing stderr handler must be swapped and restored.
+        handler = _logging.StreamHandler(sys.stderr)
+        root.addHandler(handler)
+        try:
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', noisy_main):
+                out, err = run_cli(['version'])
+        finally:
             root.removeHandler(handler)
 
         self.assertIn('{"ok": true}', out)
         self.assertNotIn('keyring lookup', err)
-        # handler restored to real stderr afterwards
         self.assertIs(handler.stream, sys.stderr)
 
     def test_run_cli_version_posix_is_package_version(self):
