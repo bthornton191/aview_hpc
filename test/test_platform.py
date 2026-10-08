@@ -16,6 +16,7 @@ platform's flavour and raise).
 """
 
 import sys
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -203,6 +204,68 @@ class TestAviewHpcModuleUsesDispatch(unittest.TestCase):
         # The batch json path is a plain absolute-ish path
         batch = argv[argv.index('submit_multi') + 1]
         self.assertTrue(batch.endswith('data.json'))
+
+
+class TestKeyringGuard(unittest.TestCase):
+    """The keyring lookup must never block a headless session indefinitely."""
+
+    def test_hung_backend_returns_none_within_timeout(self):
+        # SecretService on a headless POSIX session blocks forever; the
+        # guard must give up after KEYRING_TIMEOUT_S and return None
+        # (=> SSH key auth), not hang.
+        from aview_hpc import _cli
+        import threading
+        import time as _time
+
+        release = threading.Event()
+
+        def hung_get_password(service, username):
+            release.wait(30)  # simulate a backend that never answers
+            return 'should-not-be-returned'
+
+        import sys as _sys
+        fake_keyring = types.ModuleType('keyring')
+        fake_keyring.get_password = hung_get_password
+        with patch.dict(_sys.modules, {'keyring': fake_keyring}), \
+             patch.object(_cli, 'KEYRING_TIMEOUT_S', 1):
+            t0 = _time.perf_counter()
+            pw = _cli._keyring_get_password('aview_hpc', 'thornton')
+            elapsed = _time.perf_counter() - t0
+        release.set()
+        self.assertIsNone(pw)
+        self.assertLess(elapsed, 5)
+
+    def test_fast_backend_returns_password(self):
+        from aview_hpc import _cli
+        import sys as _sys
+        fake_keyring = types.ModuleType('keyring')
+        fake_keyring.get_password = lambda s, u: 'sekret'
+        with patch.dict(_sys.modules, {'keyring': fake_keyring}):
+            self.assertEqual(_cli._keyring_get_password('aview_hpc', 'thornton'),
+                             'sekret')
+
+    def test_missing_backend_returns_none(self):
+        # keyring not installed at all (or import error) -> None, no raise
+        from aview_hpc import _cli
+        import sys as _sys
+        with patch.dict(_sys.modules, {'keyring': None}):
+            # patching a module to None makes `import keyring` raise ImportError
+            self.assertIsNone(_cli._keyring_get_password('aview_hpc', 'thornton'))
+
+    def test_cli_module_importable_without_keyring_paramiko(self):
+        # The deferred imports mean _cli imports cleanly on an interpreter
+        # that lacks keyring/paramiko entirely (the CDM deps-target case
+        # before those were installed).
+        import importlib
+        import sys as _sys
+        saved = {m: _sys.modules.pop(m)
+                 for m in ('keyring', 'paramiko') if m in _sys.modules}
+        try:
+            import aview_hpc._cli as c
+            importlib.reload(c)
+        finally:
+            _sys.modules.update(saved)
+        self.assertTrue(hasattr(c, 'main'))
 
 
 if __name__ == '__main__':

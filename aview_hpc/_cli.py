@@ -15,14 +15,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, Generator, List, Type, Union
 
-import keyring
 import pandas as pd
 from adamspy.postprocess.msg import check_if_finished as check_if_msg_finished
-from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
 
 from .aview_hpc import get_binary_version
 from .config import get_config, set_config
-from .get_binary import get_binary
 from .schedulers import get_scheduler
 from .version import version
 
@@ -32,6 +29,54 @@ LINUX_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 RES_EXTS = ('.res', '.req', '.gra', '.msg', '.out')
 LOG = logging.getLogger(__name__)
 SLEEP_TIME = 10
+
+KEYRING_TIMEOUT_S = 10
+"""How long a keyring password lookup may block before it is treated as
+"no stored password" (see :func:`_keyring_get_password`)."""
+
+
+def _keyring_get_password(service: str, username: str):
+    """``keyring.get_password`` that cannot hang a headless session.
+
+    On a headless POSIX session (Adams View in batch on a CI VM, no D-Bus
+    session bus) the default ``keyring`` backend is SecretService, whose
+    ``get_password`` blocks indefinitely waiting for a D-Bus reply that
+    never comes -- there is no timeout anywhere in that stack. This was
+    observed live on sjcvl-thornton (2026-10-08): a batch ``aview ru-st b``
+    run sat for 15+ minutes inside ``HPCSession._connect`` before being
+    killed manually.
+
+    On Windows (and any backend that answers) this is a plain
+    ``keyring.get_password`` call wrapped in a thread with a generous
+    timeout; ``None`` (no stored password) is the fallback either way, and
+    ``HPCSession._connect`` then uses SSH key authentication, so a hung or
+    absent keyring degrades to key auth instead of a hang.
+
+    The lookup runs in a DAEMON thread: if the backend never answers, the
+    thread is abandoned (it cannot block interpreter exit) and ``None`` is
+    returned after the timeout.
+    """
+    import threading
+
+    result = {}
+
+    def lookup():
+        try:
+            import keyring
+            result['password'] = keyring.get_password(service, username)
+        except Exception as err:  # no backend, locked keyring, ...
+            LOG.warning(f'keyring lookup for {service}/{username} failed: {err}')
+            result['password'] = None
+
+    worker = threading.Thread(target=lookup, daemon=True)
+    worker.start()
+    worker.join(KEYRING_TIMEOUT_S)
+    if worker.is_alive():
+        LOG.warning(f'keyring lookup for {service}/{username} did not answer within '
+                    f'{KEYRING_TIMEOUT_S}s (headless/no D-Bus session?). '
+                    'Falling back to SSH key authentication.')
+        return None
+    return result.get('password')
 
 
 class HPCSession():
@@ -76,10 +121,12 @@ class HPCSession():
             time.sleep(60)
 
     def _connect(self):
+        from paramiko import SSHClient, AutoAddPolicy
+
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
 
-        password = keyring.get_password('aview_hpc', self.username)
+        password = _keyring_get_password('aview_hpc', self.username)
         connect_kwargs = {'username': self.username, 'password': password}
 
         if password is None:
@@ -414,6 +461,7 @@ def hpc_session(host=None,
                 remote_dir=None) -> Generator[HPCSession, HPCSession, None]:
 
     # This will repeatedly try to connect to the HPC if there is a timeout (gives up after 24 hours)
+    from paramiko import AuthenticationException
     for _ in range(60*24):
         try:
             session = HPCSession(host, username, job_name, job_id, remote_dir)
@@ -494,6 +542,7 @@ def submit_multi(acf_files: List[Path],
         raise ValueError('The number of ADM files must match the number of ACF files')
     if aux_files is None:
         aux_files = [[]] * len(acf_files)
+    from paramiko import SSHException
 
     remote_dirs: List[Path] = []
     job_names: List[str] = []
@@ -893,6 +942,7 @@ def main():
     # get_binary
     # ----------------------------------------------------------------------------------------------
     elif command == 'get_binary':
+        from .get_binary import get_binary
         binary = get_binary()
         print(binary)
 
