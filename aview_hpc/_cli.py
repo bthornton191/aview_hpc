@@ -434,25 +434,23 @@ def hpc_session(host=None,
 
     # This will repeatedly try to connect to the HPC if there is a timeout (gives up after 24 hours).
     # paramiko is imported lazily: local mode (submit host) never makes an
-    # SSH connection and must not need paramiko installed.
-    try:
-        from paramiko import AuthenticationException
-    except ImportError:
-        AuthenticationException = None
-
+    # SSH connection and must not import paramiko at all -- even when it is
+    # installed (the deps target on the VM has it). The import happens only
+    # when the failing exception itself came from paramiko, which means
+    # paramiko is already in sys.modules.
     for _ in range(60*24):
         try:
             session = HPCSession(host, username, job_name, job_id, remote_dir)
             break
         except Exception as err:
-            if (AuthenticationException is not None
-                    and isinstance(err, AuthenticationException)
-                    and 'timeout' in err.args[0].lower()):
-                msg = 'Could not authenticate with the HPC. Retrying...'
-                LOG.warning(msg)
-                time.sleep(60)
-            else:
-                raise err
+            if type(err).__module__.split('.')[0] == 'paramiko':
+                from paramiko import AuthenticationException
+                if (isinstance(err, AuthenticationException)
+                        and 'timeout' in err.args[0].lower()):
+                    LOG.warning('Could not authenticate with the HPC. Retrying...')
+                    time.sleep(60)
+                    continue
+            raise err
 
     try:
         yield session
@@ -524,12 +522,10 @@ def submit_multi(acf_files: List[Path],
         aux_files = [[]] * len(acf_files)
 
     # paramiko lazily: only needed when the transport actually SSHes
-    # (a remote host); local mode (submit host) has no SSH exceptions.
-    try:
-        from paramiko import SSHException
-        retry_exceptions = (SSHException, ConnectionResetError)
-    except ImportError:
-        retry_exceptions = (ConnectionResetError,)
+    # (a remote host); local mode (submit host) must not import it at all,
+    # even when installed. Retry catches are built from the exception's
+    # own module origin, same as hpc_session.
+    retry_exceptions: tuple = (ConnectionResetError,)
 
     remote_dirs: List[Path] = []
     job_names: List[str] = []
@@ -562,7 +558,6 @@ def submit_multi(acf_files: List[Path],
                     else:
                         # Waited long enough, raise the error
                         raise err
-
                 else:
                     # If successful...
                     LOG.info(f'{acf_file} submitted.')
