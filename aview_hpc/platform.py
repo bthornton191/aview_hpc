@@ -28,6 +28,7 @@ This module owns every platform decision the client needs:
 """
 
 import io
+import logging
 import os
 import subprocess
 import sys
@@ -36,6 +37,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .get_binary import get_binary
+
+LOG = logging.getLogger(__name__)
 
 IS_WINDOWS = os.name == 'nt'
 """True on Windows.  Module-level constant so tests can assert dispatch,
@@ -85,6 +88,15 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     is used for the same effect and restored afterwards (the CLI resolves
     every non-remote ``Path`` argument to an absolute path itself, so the
     chdir only has to cover paths the caller passed as relative strings).
+
+    The CLI logs through the ``logging`` package; its root handler writes
+    to stderr, which the caller would misread as a real error (the
+    ``aview_hpc.aview_hpc`` wrapper raises on any non-UserWarning stderr).
+    For the duration of the in-process call the root logger's level is
+    raised to WARNING-minus-nothing -- specifically, handlers are pointed
+    at a scratch StringIO and restored afterwards, so log records never
+    reach the caller's stderr.  (``main()`` itself sets the root level
+    from ``--log_level``, default INFO, so record emission is expected.)
     """
     from ._cli import main as cli_main
 
@@ -94,6 +106,18 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     old_cwd = Path.cwd()
     out_io, err_io = io.StringIO(), io.StringIO()
 
+    # The CLI's logging must not leak into the caller's stderr capture:
+    # aview_hpc.aview_hpc treats any non-UserWarning stderr as a hard
+    # error (historic exe contract). Point every root-logger handler's
+    # stream at a scratch buffer for the duration of the call and restore
+    # it afterwards. (main() sets the root LEVEL from --log_level itself.)
+    root = logging.getLogger()
+    saved_streams = [(h, getattr(h, 'stream', None)) for h in root.handlers]
+    log_io = io.StringIO()
+    for handler, _ in saved_streams:
+        if hasattr(handler, 'stream'):
+            handler.stream = log_io
+
     sys.argv = ['aview_hpc', *argv]
     try:
         if cwd is not None:
@@ -102,8 +126,13 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
             cli_main()
     finally:
         sys.argv = old_argv
+        for handler, stream in saved_streams:
+            if hasattr(handler, 'stream'):
+                handler.stream = stream
         if str(old_cwd) != str(Path.cwd()):
             os.chdir(str(old_cwd))
+
+    LOG.debug('in-process CLI log output: %s', log_io.getvalue()[-2000:])
 
     return out_io.getvalue(), err_io.getvalue()
 
