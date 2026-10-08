@@ -24,7 +24,9 @@ This module owns every platform decision the client needs:
   Adams' embedded 3.10, which is the interpreter the deps target
   (``/tmp/thornton/adams_py310``) is installed for.  Spawning
   ``sys.executable -m aview_hpc`` instead would use the SYSTEM 3.9 inside
-  aview (CDM AGENTS.md rule 2), which cannot see the deps target.
+  aview (CDM AGENTS.md rule 2), which cannot see the deps target.  The
+  in-process path reproduces the exe's error contract and restores all
+  process state it touches (see :func:`_run_cli_inprocess`).
 """
 
 import io
@@ -32,6 +34,7 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -69,17 +72,14 @@ def _exe_cmd(argv: List[str]) -> List[str]:
     return [str(get_binary(print_=False)), *argv]
 
 
+
 def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str, str]:
     """Run one aview_hpc CLI command in this interpreter (POSIX path).
 
     ``argv`` is the argument list AFTER the program name (e.g.
     ``['submit', 'x.acf', '--adm_file', 'x.adm']``).  The CLI's ``main()``
     parses ``sys.argv``, so ``sys.argv`` is swapped around the call and
-    restored in a ``finally`` -- ``main()`` also exits only via exceptions,
-    it never calls ``sys.exit`` on success, so no ``SystemExit`` handling
-    is needed (the ``version`` / ``set_config`` error paths print to stderr
-    and ``exit(2)``; that is surfaced as a normal ``SystemExit`` exception
-    which the caller treats like any other failure).
+    restored in a ``finally``.
 
     stdout/stderr are captured with ``redirect_stdout``/``redirect_stderr``
     so JSON printed by ``main()`` comes back exactly as the subprocess pipe
@@ -89,14 +89,30 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     every non-remote ``Path`` argument to an absolute path itself, so the
     chdir only has to cover paths the caller passed as relative strings).
 
+    Error contract (kept identical to the frozen-exe subprocess): any
+    failure of ``main()`` -- a real exception, ``SystemExit`` from an
+    ``exit(2)`` CLI error path, DNS/SSH errors raised out of the
+    scheduler -- is caught here (``KeyboardInterrupt`` excepted) and
+    written into the captured stderr buffer as a formatted traceback,
+    exactly what a crashed exe subprocess printed on stderr.  The
+    ``aview_hpc.aview_hpc`` wrapper then raises its usual
+    ``RuntimeError``.  Callers like CDM ``hpc_jobs.py`` / ``base_test.py``
+    catch only ``RuntimeError``; letting the raw exception class escape
+    would break their retry/abort handling (review round 1, t_d1685315).
+
+    Process state (``sys.excepthook``, root logger level, handler
+    streams) is saved before the call and restored in the ``finally``
+    block: ``main()`` installs its own ``sys.excepthook`` and sets the
+    root level from ``--log_level`` (default INFO); leaving those set
+    would permanently change the host process (Adams View) after a
+    single client call (review round 1, t_d1685315).
+
     The CLI logs through the ``logging`` package; its root handler writes
     to stderr, which the caller would misread as a real error (the
     ``aview_hpc.aview_hpc`` wrapper raises on any non-UserWarning stderr).
-    For the duration of the in-process call the root logger's level is
-    raised to WARNING-minus-nothing -- specifically, handlers are pointed
-    at a scratch StringIO and restored afterwards, so log records never
-    reach the caller's stderr.  (``main()`` itself sets the root level
-    from ``--log_level``, default INFO, so record emission is expected.)
+    For the duration of the in-process call the root logger's handlers
+    are pointed at a scratch StringIO and restored afterwards, so log
+    records never reach the caller's stderr capture.
     """
     from ._cli import main as cli_main
 
@@ -104,6 +120,9 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
 
     old_argv = sys.argv
     old_cwd = Path.cwd()
+    old_excepthook = sys.excepthook
+    root = logging.getLogger()
+    old_root_level = root.level
     out_io, err_io = io.StringIO(), io.StringIO()
 
     # The CLI's logging must not leak into the caller's stderr capture:
@@ -117,7 +136,6 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     #      sys.stderr, which redirect_stderr captures as process stderr.
     #      A temporary root handler is installed for the duration so
     #      lastResort never fires.
-    root = logging.getLogger()
     saved_streams = [(h, getattr(h, 'stream', None)) for h in root.handlers]
     added_handler = None
     log_io = io.StringIO()
@@ -135,8 +153,22 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
             os.chdir(str(cwd))
         with redirect_stdout(out_io), redirect_stderr(err_io):
             cli_main()
+    except KeyboardInterrupt:
+        raise
+    except BaseException:
+        # Same contract as the frozen exe: a crashed CLI prints its
+        # traceback to stderr (the CLI's own excepthook does exactly
+        # this when it runs as a script), and the wrapper turns that
+        # into RuntimeError. SystemExit (argparse / exit(2) error
+        # paths) and scheduler exceptions (paramiko.SSHException,
+        # socket.gaierror, OSError) MUST arrive here too, not escape
+        # raw -- CDM's retry handlers catch only RuntimeError
+        # (hpc_jobs.py:188, base_test.py:982; review round 1).
+        print(traceback.format_exc(), file=err_io)
     finally:
         sys.argv = old_argv
+        sys.excepthook = old_excepthook
+        root.setLevel(old_root_level)
         if added_handler is not None:
             root.removeHandler(added_handler)
         else:

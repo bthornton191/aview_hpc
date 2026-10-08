@@ -154,15 +154,137 @@ class TestPosixDispatch(unittest.TestCase):
             run_cli(['submit', 'x.acf', '--mins', '5'])
         self.assertEqual(sys.argv, argv_before)
 
-    def test_run_cli_posix_system_exit_surfaces(self):
-        # CLI error paths call sys.exit(2) -- must not be swallowed.
-        def failing_main():
+    # ------------------------------------------------------------------
+    # Error contract (review round 1): the POSIX in-process path must
+    # fail EXACTLY like the frozen exe subprocess -- a traceback written
+    # to the captured stderr, which the aview_hpc.aview_hpc wrapper turns
+    # into RuntimeError. CDM hpc_jobs.py:188 and base_test.py:982 catch
+    # only RuntimeError, so raw paramiko.SSHException / socket.gaierror /
+    # SystemExit escaping run_cli would abort sets on any transient blip.
+    # ------------------------------------------------------------------
+
+    def _assert_runtime_error_contract(self, run_cli_call, needle):
+        from aview_hpc.aview_hpc import _clean_err
+        out, err = run_cli_call
+        self.assertEqual(out, '')
+        # the exception class must NOT escape; a formatted traceback is
+        # written into the stderr buffer instead
+        self.assertIn('Traceback (most recent call last)', err)
+        self.assertIn(needle, err)
+        # and the wrapper classifies this stderr as a hard error (the
+        # same check aview_hpc.aview_hpc runs before raising RuntimeError)
+        self.assertTrue(_clean_err(err))
+
+    def test_run_cli_posix_ssh_exception_becomes_stderr_traceback(self):
+        # paramiko.SSHException escaping _cli.main (SSH banner / connect
+        # failure) -- reproduced live by the reviewer on the round-1 head.
+        import paramiko
+
+        def ssh_fail_main():
+            raise paramiko.SSHException('Error reading SSH protocol banner')
+
+        def call():
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', ssh_fail_main):
+                return run_cli(['get_results', '/r/dir', '/l/dir'])
+
+        self._assert_runtime_error_contract(call(), 'SSHException')
+
+    def test_run_cli_posix_oserror_gaierror_becomes_stderr_traceback(self):
+        # socket.gaierror (bad host / DNS blip) -- reproduced live by the
+        # reviewer via get_job_table() with a bad host.
+        def gai_fail_main():
+            raise OSError(-2, 'Name or service not known')
+
+        def call():
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', gai_fail_main):
+                return run_cli(['get_job_table'])
+
+        self._assert_runtime_error_contract(call(), 'OSError')
+
+    def test_run_cli_posix_system_exit_becomes_stderr_traceback(self):
+        # CLI error paths call sys.exit(2) (set_config with a bogus
+        # scheduler). SystemExit is a BaseException, NOT an Exception --
+        # an `except Exception` here would let it escape raw.
+        def exit_fail_main():
             raise SystemExit(2)
 
+        def call():
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', exit_fail_main):
+                return run_cli(['set_config', '--scheduler', 'bogus'])
+
+        out, err = call()
+        self.assertEqual(out, '')
+        self.assertIn('Traceback (most recent call last)', err)
+        self.assertIn('SystemExit', err)
+
+    def test_run_cli_posix_keyboard_interrupt_still_raises(self):
+        # KeyboardInterrupt is re-raised, never converted: a ^C must not
+        # be reported to the caller as a completed CLI failure.
+        def interrupt_main():
+            raise KeyboardInterrupt()
+
         with patch.object(platform, 'IS_WINDOWS', False), \
-             patch('aview_hpc._cli.main', failing_main):
-            with self.assertRaises(SystemExit):
-                run_cli(['set_config', '--scheduler', 'bogus'])
+             patch('aview_hpc._cli.main', interrupt_main):
+            with self.assertRaises(KeyboardInterrupt):
+                run_cli(['version'])
+
+    # ------------------------------------------------------------------
+    # Process-state restoration (review round 1): _cli.main() installs
+    # its own sys.excepthook and sets the root logger level from
+    # --log_level (default INFO); run_cli must restore BOTH.
+    # ------------------------------------------------------------------
+
+    def test_run_cli_posix_restores_excepthook_and_root_level(self):
+        import logging as _logging
+        root = _logging.getLogger()
+        old_excepthook = sys.excepthook
+        old_level = root.level
+
+        def stateful_main():
+            # exactly what the real main() does (probed: _cli.py:690 and
+            # _cli.py:862) -- mutates both pieces of process state
+            sys.excepthook = lambda *a: None
+            root.setLevel(_logging.DEBUG)
+            print('{"ok": true}')
+
+        try:
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', stateful_main):
+                out, err = run_cli(['version'])
+            self.assertIn('{"ok": true}', out)
+            # both must be back to the pre-call values
+            self.assertIs(sys.excepthook, old_excepthook)
+            self.assertEqual(root.level, old_level)
+        finally:
+            sys.excepthook = old_excepthook
+            root.setLevel(old_level)
+
+    def test_run_cli_posix_restores_state_after_cli_crash(self):
+        # Restoration must also hold on the FAILURE path (the finally
+        # block), not just after a successful call.
+        import logging as _logging
+        root = _logging.getLogger()
+        old_excepthook = sys.excepthook
+        old_level = root.level
+
+        def crashing_stateful_main():
+            sys.excepthook = lambda *a: None
+            root.setLevel(_logging.DEBUG)
+            raise RuntimeError('boom')
+
+        try:
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', crashing_stateful_main):
+                out, err = run_cli(['version'])
+            self.assertIs(sys.excepthook, old_excepthook)
+            self.assertEqual(root.level, old_level)
+            self.assertIn('RuntimeError: boom', err)
+        finally:
+            sys.excepthook = old_excepthook
+            root.setLevel(old_level)
 
     def test_run_cli_posix_log_output_does_not_leak_to_stderr(self):
         # The CLI's logging handlers write to stderr by default; the
