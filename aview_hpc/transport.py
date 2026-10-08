@@ -299,11 +299,32 @@ class LocalTransport(Transport):
 
     name = 'local'
 
+    #: Environment variables stripped from scheduler-command children.
+    #: They describe THIS interpreter (inside Adams View, the embedded
+    #: 3.10) and are meaningless or actively wrong for a child:
+    #: PYTHONHOME makes a different interpreter build load the wrong
+    #: stdlib (seen live on sjcvl-thornton 2026-10-08: Adams' PYTHONHOME
+    #: sent the system python 3.9 shebang into Adams' 3.10 io.py,
+    #: "cannot import name 'text_encoding'"), PYTHONPATH feeds 3.10-built
+    #: deps-target extensions to a 3.9 child. The SSH path forwarded no
+    #: environment at all (fresh login env on the remote host), so
+    #: stripping these matches its semantics.
+    STRIP_CHILD_ENV = ('PYTHONHOME', 'PYTHONPATH')
+
     def __init__(self, remote_root: Optional[Path] = None):
         self.remote_root = (Path(remote_root)
                             if remote_root is not None else None)
         if self.remote_root is not None:
             self._check_remote_root(self.remote_root)
+
+    @staticmethod
+    def _child_env(extra: Optional[dict] = None) -> dict:
+        """Sanitized environment for scheduler-command children."""
+        env = {k: v for k, v in os.environ.items()
+               if k not in LocalTransport.STRIP_CHILD_ENV}
+        if extra:
+            env.update(extra)
+        return env
 
     @staticmethod
     def _check_remote_root(root: Path):
@@ -362,7 +383,7 @@ class LocalTransport(Transport):
         LOG.debug('LocalTransport running (shell=False): %s', argv)
         try:
             proc = subprocess.run(argv, shell=False, capture_output=True,
-                                  text=True)
+                                  text=True, env=self._child_env())
         except OSError as err:
             raise RuntimeError(f'Could not run {argv[0]}: {err}') from err
         if proc.returncode != 0:
@@ -398,8 +419,7 @@ class LocalTransport(Transport):
         expanded[0] = _which_first_word(expanded[0])
         LOG.debug('LocalTransport running (shell=False): %s', expanded)
 
-        env = dict(os.environ)
-        env['COLUMNS'] = COLUMNS
+        env = self._child_env({'COLUMNS': COLUMNS})
         proc = subprocess.run(expanded, shell=False, capture_output=True,
                               text=True, env=env)
         if proc.returncode != 0:

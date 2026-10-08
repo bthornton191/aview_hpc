@@ -313,6 +313,31 @@ class TestLocalTransportOps(unittest.TestCase):
         self.assertIn('a.acf', remaining)
         self.assertNotIn('a.lsf', remaining)
 
+    def test_exec_argv_strips_embedded_interpreter_env(self):
+        # Inside Adams View the process env carries PYTHONHOME/PYTHONPATH
+        # for the EMBEDDED 3.10; a scheduler child (lsf.py's #!python3 =
+        # system 3.9) must not inherit them (live failure on
+        # sjcvl-thornton 2026-10-08: "cannot import name 'text_encoding'").
+        code = ('import sys, os; '
+                'print("PYTHONHOME" in os.environ, '
+                '"PYTHONPATH" in os.environ, '
+                'sys.version_info[0], sys.version_info[1])')
+        with patch.dict(os.environ, {'PYTHONHOME': '/embedded/py310',
+                                     'PYTHONPATH': '/deps/target'},
+                        clear=False):
+            out, _ = self.transport.exec_argv([sys.executable, '-c', code])
+        self.assertEqual(out.strip().split()[:2], ['False', 'False'])
+
+    def test_child_env_keeps_other_variables(self):
+        env = LocalTransport._child_env({'COLUMNS': '120'})
+        self.assertNotIn('PYTHONHOME', env)
+        self.assertNotIn('PYTHONPATH', env)
+        self.assertEqual(env['COLUMNS'], '120')
+        # a normal variable survives
+        with patch.dict(os.environ, {'MY_CUSTOM_VAR': 'x'}, clear=False):
+            env = LocalTransport._child_env()
+        self.assertEqual(env['MY_CUSTOM_VAR'], 'x')
+
     def test_close_is_noop(self):
         self.transport.close()  # must not raise
 
