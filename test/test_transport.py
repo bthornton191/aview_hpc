@@ -383,13 +383,28 @@ class TestParamikoNotImportedLocally(unittest.TestCase):
 
     def test_sshtransport_imports_paramiko_lazily_on_connect(self):
         # The import lives inside _connect, not at module/class definition:
-        # importing aview_hpc.transport must not pull paramiko in.
+        # importing aview_hpc.transport must not pull paramiko in. The
+        # reload must NOT leave a half-stale module behind: other tests in
+        # this file hold references to the OLD classes, and a plain
+        # importlib.reload rebinds select_transport to construct NEW class
+        # objects, making later isinstance checks fail mysteriously. The
+        # fresh module is used for the assertion and then discarded, and
+        # sys.modules is restored to the ORIGINAL module object.
+        import importlib.util
         saved = sys.modules.pop('paramiko', None)
+        original = sys.modules['aview_hpc.transport']
         try:
-            import importlib
-            importlib.reload(transport_module)
+            sys.modules.pop('aview_hpc.transport', None)
+            spec = importlib.util.find_spec('aview_hpc.transport')
+            assert spec is not None and spec.loader is not None
+            fresh = importlib.util.module_from_spec(spec)
+            sys.modules['aview_hpc.transport'] = fresh
+            spec.loader.exec_module(fresh)
             self.assertNotIn('paramiko', sys.modules)
         finally:
+            # restore the original module object so every other test's
+            # class references stay valid
+            sys.modules['aview_hpc.transport'] = original
             if saved is not None:
                 sys.modules['paramiko'] = saved
 
