@@ -115,7 +115,39 @@ submit(
 
 ## Development
 
+### Releasing
+
+Releases are automated: push a version tag and a GitHub Actions workflow
+([release.yml](.github/workflows/release.yml)) builds `aview_hpc.exe` on a
+Windows runner and attaches it to the GitHub Release for that tag. The
+Windows client's `get_binary()` downloads exactly that asset, so a tag
+without a built exe leaves every Windows client on that version broken.
+
+To release a version:
+
+1. Bump `version` in `aview_hpc/version.py` and `VERSION` in `setup.py`
+   (they must match; the workflow fails the build if they don't match the
+   tag).
+2. Commit, push to `master`, then tag and push the tag:
+   ```shell
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+3. The workflow checks out the tag tree, runs the pure unit tests
+   (`test.test_schedulers`, `test.test_platform`), freezes the exe with
+   PyInstaller (the same `main.spec` as `freeze.bat`), smoke-tests
+   `aview_hpc.exe version` against the tag, and creates the Release with
+   `aview_hpc.exe` attached.
+
+To backfill a Release for an existing tag (e.g. a tag cut before the
+workflow existed), run the workflow manually:
+**Actions → release → Run workflow →** enter the tag (e.g. `v0.4.1`). The
+build always uses the tag's tree, not the branch tip.
+
 ### Building the Binary
+
+The workflow above builds and releases the exe automatically. To build one
+by hand (for local debugging):
 ```bat
 git clone https://github.com/bthornton191/aview_hpc
 cd aview_hpc
