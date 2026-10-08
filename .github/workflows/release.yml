@@ -1,0 +1,163 @@
+name: release
+
+# Build aview_hpc.exe with PyInstaller and attach it to the GitHub Release
+# for the tag. The Windows client's get_binary() downloads this exe from
+# releases/download/v<version>/aview_hpc.exe, so every version tag needs one.
+#
+# Two triggers:
+#   * push of a v* tag            - the normal release path
+#   * workflow_dispatch with a tag - backfills a Release for an existing tag
+#     (the workflow must already exist on the default branch for dispatch,
+#     and it checks out the TAG tree, not the dispatch branch)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and release (e.g. v0.4.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve tag to build
+        id: tag
+        shell: bash
+        env:
+          # Passed via env, not interpolated into the script body, so a
+          # hand-typed dispatch input can never inject shell code.
+          TAG_INPUT: ${{ inputs.tag || '' }}
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME:-}"
+          TAG="${TAG_INPUT}"
+          if [ -n "$TAG" ]; then
+            echo "dispatch input: $TAG" >&2
+            REF="$TAG"
+          fi
+          if [ -z "$REF" ]; then
+            echo "::error::No tag: neither a tag push nor a dispatch 'tag' input." >&2
+            exit 1
+          fi
+          case "$REF" in
+            v*) ;;
+            *) echo "::error::Ref '$REF' is not a v* tag." >&2; exit 1 ;;
+          esac
+          if ! git ls-remote --exit-code --tags https://github.com/${GITHUB_REPOSITORY}.git "refs/tags/$REF" >/dev/null 2>&1; then
+            echo "::error::Tag '$REF' does not exist on origin." >&2
+            exit 1
+          fi
+          echo "tag=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building release for tag: $REF"
+
+      - name: Check out the tag tree
+        uses: actions/checkout@v4
+        with:
+          # The tag tree is what gets frozen: a dispatch backfill MUST NOT
+          # pick up post-tag commits, and a tag push event has the workflow
+          # only because it is pushed, so never build from the branch tip.
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # 3.11 = the interpreter inside the v0.3.0 exe (python311.dll);
+          # freezing with a different minor version would silently change
+          # the runtime every Windows client downloads.
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          # requirements.txt is a full dev-env freeze (job_monitor's
+          # PyQt5/dash/plotly stack included) and installs cleanly - it is
+          # exactly what freeze.bat installs locally. Keep the build
+          # environment identical to the one that produced every released
+          # exe to date. If a pin ever stops resolving, trim here only with
+          # an import-graph justification (main.py cannot reach job_monitor).
+          python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Fail-closed version gate
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tagVersion = "$env:RELEASE_TAG".TrimStart('v')
+          $versionPy = Select-String -Path aview_hpc/version.py `
+            -Pattern "^version\s*=\s*'([^']+)'" |
+            Select-Object -First 1
+          $setupPy = Select-String -Path setup.py `
+            -Pattern "^VERSION\s*=\s*'([^']+)'" |
+            Select-Object -First 1
+          if (-not $versionPy) { throw 'version.py: no ^version = ... line found' }
+          if (-not $setupPy) { throw 'setup.py: no ^VERSION = ... line found' }
+          $pyVersion = $versionPy.Matches[0].Groups[1].Value
+          $setupVersion = $setupPy.Matches[0].Groups[1].Value
+          Write-Host "tag=$tagVersion version.py=$pyVersion setup.py=$setupVersion"
+          if ($pyVersion -ne $tagVersion) {
+            throw "FAIL-CLOSED: version.py ($pyVersion) != tag ($tagVersion)"
+          }
+          if ($setupVersion -ne $tagVersion) {
+            throw "FAIL-CLOSED: setup.py ($setupVersion) != tag ($tagVersion)"
+          }
+
+      - name: Run pure unit tests
+        shell: pwsh
+        run: python -m unittest test.test_schedulers test.test_platform
+
+      - name: Build the exe
+        shell: cmd
+        run: pyinstaller --noconfirm main.spec
+
+      - name: Smoke test the exe
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tagVersion = "$env:RELEASE_TAG".TrimStart('v')
+          if (-not (Test-Path 'dist\aview_hpc.exe')) {
+            throw 'dist\aview_hpc.exe not found'
+          }
+          # `version` is what get_binary._bin_version() runs (full stdout,
+          # stripped); its output must equal the tag exactly or every
+          # Windows client re-downloads on every call.
+          $out = (& 'dist\aview_hpc.exe' version | Out-String).Trim()
+          Write-Host "exe version output: $out"
+          if ("$out" -ne $tagVersion) {
+            throw "FAIL-CLOSED: exe version '$out' != tag '$tagVersion'"
+          }
+          & 'dist\aview_hpc.exe' --help *> $null
+          if ($LASTEXITCODE -ne 0) {
+            throw "exe --help exited $LASTEXITCODE"
+          }
+          Write-Host 'Smoke test passed.'
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'   # gh is a native exe: stderr with EAP=Stop is fatal
+          $tag = $env:TAG
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag exists; uploading with --clobber."
+            gh release upload $tag dist\aview_hpc.exe --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            Write-Host "Creating release $tag."
+            gh release create $tag dist\aview_hpc.exe --repo $env:GITHUB_REPOSITORY `
+              --title "$tag" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,assets -q '.url, (.assets[].name)'
