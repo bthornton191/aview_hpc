@@ -10,14 +10,17 @@ optional arguments:
   -h, --help            show this help message and exit
   --mins MINS           Wall-clock limit for the job, in minutes (default: 720)
   --queue QUEUE         LSF queue (default: lnx64)
-  --project PROJECT     Charge code, format PRODUCT:RELEASE:GROUP:PURPOSE
-                        (required; can also be supplied via $LSF_PROJECT)
+  --project PROJECT     Farm project label, PRODUCT:RELEASE:GROUP:PURPOSE[:extra...]
+                        (required; falls back to $LSF_PROJECT, then the
+                        'project' key in ~/.aview_hpc)
   --res_req RES_REQ     LSF resource requirement string (default: pins to
                         RHEL 8.6+ or RHEL 9 hosts)
   --adams_home DIR      Adams installation directory containing `mdi`
-                        (required; can also be supplied via $ADAMS_HOME)
+                        (required; falls back to $ADAMS_HOME, then the
+                        'adams_home' key in ~/.aview_hpc)
   --license LICENSE     MSC license file string, e.g. 1700@sjflex5
-                        (required; can also be supplied via $MSC_LICENSE_FILE)
+                        (required; falls back to $MSC_LICENSE_FILE, then the
+                        'license' key in ~/.aview_hpc)
   --ld_library_path P   Optional LD_LIBRARY_PATH for the solver
                         (can also be supplied via $ADAMS_LD_LIBRARY_PATH)
   --email EMAIL         bsub -u value (default: noemail)
@@ -33,9 +36,16 @@ The submission goes through the site wrapper /grid/sfi/farm/bin/bsub, which
 enforces the Cadence farm rules (mandatory -W and -P, etc.). On success bsub
 prints "Job <id> is submitted to queue <queue>.", which is what the
 aview_hpc client parses.
+
+Why the ~/.aview_hpc fallback: aview_hpc runs this script through a
+non-interactive SSH exec, which sources no login files, and the qual harness
+never forwards --project/--adams_home/--license. Environment variables are
+therefore usually absent, and the per-user config file is the only place a
+farm-specific value can live. Precedence: CLI flag > environment > config.
 '''
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -48,7 +58,27 @@ from pathlib import Path
 BSUB = '/grid/sfi/farm/bin/bsub'
 DEFAULT_QUEUE = 'lnx64'
 DEFAULT_RES_REQ = 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'
-RE_PROJECT = re.compile(r'[A-Z]+:[^:]+:[A-Z]+:[^:]+')
+# Site rule (sjlsf01 bsub wrapper): ^[A-Z]+:[^:]+:[A-Z]+:[^:]+ as a PREFIX, so
+# optional trailing ``:field`` segments are allowed (Cadence IT: "-P
+# <PRODUCT:release:GROUP:purpose[:optional-field]>").
+RE_PROJECT = re.compile(r'[A-Z]+:[^:]+:[A-Z]+:[^:]+(?::[^:]+)*')
+CONFIG_FILE = Path.home() / '.aview_hpc'
+
+
+def load_config(config_file: Path = None) -> dict:
+    """Read ~/.aview_hpc ON THE FARM HOST (where this script runs), not the
+    client's copy. A missing or unreadable file is {}."""
+    config_file = Path(config_file) if config_file else CONFIG_FILE
+    try:
+        with open(config_file) as f:
+            config = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(config, dict):
+        return {}
+    # Keep only non-empty string values: a mistyped value (number, list) must
+    # surface as a clean "is required" parser error, not a TypeError later.
+    return {k: v for k, v in config.items() if isinstance(v, str) and v.strip()}
 
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
 RE_NTHREADS = re.compile(r'nthreads[ \t]*=[ \t]*(\d+)\b', flags=re.I)
@@ -239,14 +269,17 @@ def main():
                         help='Wall-clock limit for the job, in minutes (default: 720)')
     parser.add_argument('--queue', type=str, default=DEFAULT_QUEUE,
                         help=f'LSF queue (default: {DEFAULT_QUEUE})')
-    parser.add_argument('--project', type=str, default=os.environ.get('LSF_PROJECT'),
-                        help='Charge code PRODUCT:RELEASE:GROUP:PURPOSE (required)')
+    config = load_config()
+    parser.add_argument('--project', type=str,
+                        default=os.environ.get('LSF_PROJECT') or config.get('project'),
+                        help='Farm project PRODUCT:RELEASE:GROUP:PURPOSE[:extra] (required)')
     parser.add_argument('--res_req', type=str, default=DEFAULT_RES_REQ,
                         help='LSF resource requirement string')
-    parser.add_argument('--adams_home', type=str, default=os.environ.get('ADAMS_HOME'),
+    parser.add_argument('--adams_home', type=str,
+                        default=os.environ.get('ADAMS_HOME') or config.get('adams_home'),
                         help='Adams installation directory containing mdi (required)')
     parser.add_argument('--license', dest='license_file', type=str,
-                        default=os.environ.get('MSC_LICENSE_FILE'),
+                        default=os.environ.get('MSC_LICENSE_FILE') or config.get('license'),
                         help='MSC license file string, e.g. 1700@sjflex5 (required)')
     parser.add_argument('--ld_library_path', type=str,
                         default=os.environ.get('ADAMS_LD_LIBRARY_PATH'),
@@ -258,15 +291,17 @@ def main():
     args, other_args = parser.parse_known_args()
 
     if not args.project:
-        parser.error('--project is required (or set $LSF_PROJECT). '
-                     'Format: PRODUCT:RELEASE:GROUP:PURPOSE')
+        parser.error("--project is required (or set $LSF_PROJECT, or a 'project' key "
+                     'in ~/.aview_hpc). Format: PRODUCT:RELEASE:GROUP:PURPOSE[:extra]')
     if not RE_PROJECT.fullmatch(args.project):
         parser.error(f'--project {args.project!r} does not match the required format '
-                     'PRODUCT:RELEASE:GROUP:PURPOSE (e.g. MSC:2023.4:NNL:SIMULATION)')
+                     'PRODUCT:RELEASE:GROUP:PURPOSE[:extra] (e.g. ADAMS:2023.4.1:AE:qual)')
     if not args.adams_home:
-        parser.error('--adams_home is required (or set $ADAMS_HOME)')
+        parser.error("--adams_home is required (or set $ADAMS_HOME, or an 'adams_home' "
+                     'key in ~/.aview_hpc)')
     if not args.license_file:
-        parser.error('--license is required (or set $MSC_LICENSE_FILE)')
+        parser.error("--license is required (or set $MSC_LICENSE_FILE, or a 'license' "
+                     'key in ~/.aview_hpc)')
 
     acf_file = Path(args.acf_file).absolute()
     mins = args.mins

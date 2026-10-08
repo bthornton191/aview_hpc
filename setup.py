@@ -1,7 +1,7 @@
 import setuptools
 import pkg
 
-VERSION = '0.3.0'      # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION IN version.py
+VERSION = '0.4.1'      # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION IN version.py
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -20,6 +20,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
     ],
     install_requires=pkg.install_requires,
 )
