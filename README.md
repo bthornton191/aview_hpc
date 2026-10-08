@@ -38,6 +38,7 @@ python -m aview_hpc set_config --username <user>
 python -m aview_hpc set_config --submit_cmd <submit_cmd>
 python -m aview_hpc set_config --remote_tempdir <remote_tempdir>
 python -m aview_hpc set_config --scheduler <slurm|lsf>
+python -m aview_hpc set_config --transport <ssh|local>
 ```
 
 Where 
@@ -46,6 +47,11 @@ Where
 - `<submit_cmd>` is the command to submit a job on the HPC cluster (see below)
 - `<remote_tempdir>` is a directory on the HPC cluster where the simulation files will be copied to
 - `<scheduler>` is the job scheduler on the host: `slurm` (the default) or `lsf`
+- `<transport>` is how the client reaches the scheduler host: `ssh` (paramiko; the
+  historical behaviour) or `local` (run scheduler commands directly with no SSH).
+  When the key is not set, aview_hpc uses `local` only if the configured `host`
+  resolves to the machine the client is running on (the LSF submit-host case, e.g.
+  the sjcvl-thornton qual VM), otherwise `ssh`. The choice is logged.
 
 The scheduler key controls how aview_hpc parses job submissions and job tables:
 
@@ -60,9 +66,25 @@ The scheduler key controls how aview_hpc parses job submissions and job tables:
   (unlike slurm, which reports unknown) — use `State`, not `End`, to decide whether a job
   is still running.
 
+### Transport (local vs SSH)
+
+Since 0.5.0 the client's remote operations go through a transport layer:
+
+- **ssh** (default for remote hosts): paramiko SSH + SFTP, unchanged from earlier
+  versions. paramiko is imported lazily, only on this path.
+- **local** (the submit-host case): scheduler commands run directly as argument
+  lists (`subprocess.run(..., shell=False)` — never a joined shell string), file
+  transfer uses `shutil`, and job directories are created under `remote_tempdir`
+  with `tempfile`. No SSH connection is made and paramiko is never imported.
+
+`local` mode requires `remote_tempdir` to be on farm-visible storage — a job
+directory on local-only disk (e.g. `/tmp` on the submit host) is invisible to the
+LSF execution hosts, so aview_hpc refuses such a root instead of submitting a
+job that can never run. Use e.g. `/vols/<user>_space/aview_hpc`.
+
 ### Authentication
 
-Two methods are supported, tried in this order:
+Two methods are supported, tried in this order (ssh transport only):
 
 1. **SSH key authentication** (used when no password is stored in the keyring): aview_hpc
    lets paramiko look for keys in `~/.ssh` and in the SSH agent. A non-default key can be

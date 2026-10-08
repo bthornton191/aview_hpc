@@ -13,6 +13,7 @@ Backends are selected with the ``scheduler`` key in the aview_hpc config
 file (``slurm`` (the default, for backwards compatibility) or ``lsf``).
 """
 
+import glob
 import json
 import logging
 import re
@@ -53,6 +54,15 @@ class SchedulerBackend:
 
     def cleanup_command(self, remote_dir: Path) -> str:
         """Return the command that removes scheduler files before a resubmit."""
+        raise NotImplementedError
+
+    def cleanup_argv(self, remote_dir: Path) -> List[str]:
+        """The argv form of :meth:`cleanup_command` (local transport).
+
+        The default resolves the directory's scheduler files in-process and
+        lists the files explicitly -- no shell, no glob in the child.  A
+        backend whose cleanup needs more than ``rm <files>`` overrides this.
+        """
         raise NotImplementedError
 
 
@@ -100,6 +110,10 @@ class SlurmBackend(SchedulerBackend):
 
     def cleanup_command(self, remote_dir: Path) -> str:
         return f'rm {Path(remote_dir).as_posix()}/*.slurm'
+
+    def cleanup_argv(self, remote_dir: Path) -> List[str]:
+        files = sorted(glob.glob(f'{Path(remote_dir).as_posix()}/*.slurm'))
+        return ['rm', '-f', *files] if files else ['true']
 
 
 def _lsf_seconds_to_hms(value) -> str:
@@ -255,6 +269,10 @@ class LSFBackend(SchedulerBackend):
 
     def cleanup_command(self, remote_dir: Path) -> str:
         return f'rm {Path(remote_dir).as_posix()}/*.lsf'
+
+    def cleanup_argv(self, remote_dir: Path) -> List[str]:
+        files = sorted(glob.glob(f'{Path(remote_dir).as_posix()}/*.lsf'))
+        return ['rm', '-f', *files] if files else ['true']
 
 
 _BACKENDS = {backend.name: backend for backend in (SlurmBackend, LSFBackend)}
