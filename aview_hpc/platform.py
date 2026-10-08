@@ -108,15 +108,26 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
 
     # The CLI's logging must not leak into the caller's stderr capture:
     # aview_hpc.aview_hpc treats any non-UserWarning stderr as a hard
-    # error (historic exe contract). Point every root-logger handler's
-    # stream at a scratch buffer for the duration of the call and restore
-    # it afterwards. (main() sets the root LEVEL from --log_level itself.)
+    # error (historic exe contract). Two leak paths exist:
+    #   1. handlers on the root logger -> their stream is swapped to a
+    #      scratch buffer and restored afterwards;
+    #   2. NO handlers at all (the case inside Adams View: probed on
+    #      sjcvl-thornton, root.handlers == []) -> logging falls back to
+    #      logging.lastResort, a _StderrHandler that writes straight to
+    #      sys.stderr, which redirect_stderr captures as process stderr.
+    #      A temporary root handler is installed for the duration so
+    #      lastResort never fires.
     root = logging.getLogger()
     saved_streams = [(h, getattr(h, 'stream', None)) for h in root.handlers]
+    added_handler = None
     log_io = io.StringIO()
-    for handler, _ in saved_streams:
-        if hasattr(handler, 'stream'):
-            handler.stream = log_io
+    if not root.handlers:
+        added_handler = logging.StreamHandler(log_io)
+        root.addHandler(added_handler)
+    else:
+        for handler, _ in saved_streams:
+            if hasattr(handler, 'stream'):
+                handler.stream = log_io
 
     sys.argv = ['aview_hpc', *argv]
     try:
@@ -126,9 +137,12 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
             cli_main()
     finally:
         sys.argv = old_argv
-        for handler, stream in saved_streams:
-            if hasattr(handler, 'stream'):
-                handler.stream = stream
+        if added_handler is not None:
+            root.removeHandler(added_handler)
+        else:
+            for handler, stream in saved_streams:
+                if hasattr(handler, 'stream'):
+                    handler.stream = stream
         if str(old_cwd) != str(Path.cwd()):
             os.chdir(str(old_cwd))
 
