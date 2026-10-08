@@ -2,13 +2,18 @@
 
 Submit simulations to an HPC cluster directly from Adams View!
 
-> [!WARNING]
-> Windows only, and the [Slurm](https://slurm.schedmd.com/) and [LSF](https://www.ibm.com/products/hpc-lsf)
-> job schedulers are supported. Features that do not depend on the scheduler (file transfer,
-> remote directory status, result download) work with either scheduler.
+> [!NOTE]
+> Windows and Linux are both supported, with the [Slurm](https://slurm.schedmd.com/) and
+> [LSF](https://www.ibm.com/products/hpc-lsf) job schedulers. Features that do not depend
+> on the scheduler (file transfer, remote directory status, result download) work with
+> either scheduler.
 
-> [!WARNING]
-> Currently supports Windows only.
+On Windows the library shells out to a frozen executable (downloaded automatically,
+see below). On Linux there is no frozen executable: the library runs its CLI
+in-process in the interpreter that imported it. Inside Adams View on Linux that is
+Adams' embedded Python, so installing the package into that interpreter's dependency
+target (e.g. with `pip --target`, hooked via a `.pth`) is what makes the
+`aview_hpc` API work from Adams.
 
 ## Installation
 
@@ -21,6 +26,8 @@ The package requires a binary file that will not be installed by pip. This will 
 downloaded the first time the library is used. Download the binary 
 [here](https://github.com/bthornton191/aview_hpc/releases/latest/download/aview_hpc.exe)
 and place it inside the `aview_hpc` package directory. 
+
+(Windows only. On Linux the library runs its CLI in-process and no binary is used.)
 
 
 ## Configuration
@@ -124,10 +131,11 @@ freeze.bat
 > The test suite actually runs jobs on the HPC cluster. You must configure the `aview_hpc` package 
 > with the correct HPC credentials before running the tests. See the Configuration section above. 
 
-The `test_schedulers` module is the exception: it is a pure unit-test suite (captured fixture
-text, no cluster required) and can always be run:
+The `test_schedulers` and `test_platform` modules are exceptions: they are pure unit-test
+suites (captured fixture text / mocked dispatch, no cluster required) and can always be run:
 ```shell
 python -m unittest test.test_schedulers -v
+python -m unittest test.test_platform -v
 ```
 
 ### Smoke test against the Cadence sjlsf01 LSF farm (manual)
