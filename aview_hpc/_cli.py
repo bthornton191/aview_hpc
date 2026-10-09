@@ -195,6 +195,14 @@ class HPCSession():
         for k, v in kwargs.items():
             LOG.debug(f'   {k}: {v}')
 
+        # Scheduler-specific translation BEFORE the kwargs become --options.
+        # Generic options (mem/nice/...) are turned into THIS scheduler's
+        # vocabulary (see SchedulerBackend.translate_submit_kwargs); anything
+        # the backend does not recognize still flows through so the submit
+        # script's own unknown-argument guard fires.
+        kwargs = self.backend.translate_submit_kwargs(kwargs, logger=LOG)
+        LOG.debug('   translated submit kwargs: %s', kwargs)
+
         if self.job_name is not None and not _ignore_resubmit:
             raise RuntimeError('Please instantiate a new object to submit another job.')
         if aux_files is None:
@@ -348,6 +356,11 @@ class HPCSession():
                                               if f.endswith('.acf')))
         except StopIteration as err:
             raise StopIteration(f'No ACF file found in {remote_dir}') from err
+
+        # Same scheduler-specific translation as submit(): a resubmit carries
+        # the same generic kwargs and must not re-send options the scheduler
+        # cannot accept (the original run-37824964058 failure mode).
+        kwargs = self.backend.translate_submit_kwargs(kwargs, logger=LOG)
 
         cmd = [self.submit_cmd, acf_file.as_posix()]
         for k, v in kwargs.items():
