@@ -15,6 +15,7 @@
       "NTHREADS": "13",
       "COMMAND": "/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt",
       "EXEC_CWD": "/home/ambinteg",
+      "SUB_CWD": "/home/ambinteg",
       "EXIT_CODE": ""
     },
     {
@@ -30,6 +31,7 @@
       "NTHREADS": "",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/x.acf",
       "EXEC_CWD": "",
+      "SUB_CWD": "/home/thornton/hpc_tmp/x.abcd",
       "EXIT_CODE": ""
     },
     {
