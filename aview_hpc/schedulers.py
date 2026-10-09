@@ -216,6 +216,14 @@ class LSFBackend(SchedulerBackend):
     * ``-u`` is intentionally not passed, so bjobs reports only the
       invoking user's jobs. This matches what consumers need and keeps the
       response small (``-u all`` returns >160k records on this farm).
+    * ``exit_code`` is requested and surfaced as the ``ExitCode`` column
+      (live-verified 2026-10-09: an ``exit 27`` job reports ``"27"``, a
+      bkill'd job ``"2"``, and RUN/DONE/PEND report ``""``). It is kept as
+      a string -- consumers (CDM ``scheduler_state``) render it as a note
+      (``' (exit code 27)'``) beside the mapped state, never as a decision
+      input. ``term_reason`` is NOT a valid field name on this LSF 10.1.
+      The slurm backend deliberately does not mirror this: its sacct
+      command is frozen byte-for-byte (pinned by a unit test).
     * For jobs still running, LSF's finish time is a *projection*; for
       finished jobs it is the actual end. Both may carry a trailing
       ``" L"`` marker (observed live on both), which is stripped. This
@@ -228,10 +236,10 @@ class LSFBackend(SchedulerBackend):
     BJOBS = '/grid/sfi/farm/bin/bjobs'
     JOB_TABLE_FIELDS = ('jobid job_name stat submit_time start_time '
                         'finish_time run_time runtimelimit nexec_host '
-                        'nthreads command exec_cwd')
+                        'nthreads command exec_cwd exit_code')
     JOB_TABLE_COLUMNS = ['JobID', 'JobName', 'Start', 'End', 'Elapsed',
                          'State', 'Timelimit', 'NNodes', 'NCPUs',
-                         'SubmitLine', 'WorkDir']
+                         'SubmitLine', 'WorkDir', 'ExitCode']
     STATE_MAP = {'PEND': 'PENDING',
                  'RUN': 'RUNNING',
                  'DONE': 'COMPLETED',
@@ -290,6 +298,13 @@ class LSFBackend(SchedulerBackend):
             NCPUs=pd.to_numeric(df['NTHREADS'], errors='coerce').fillna(1).astype(int),
             SubmitLine=df['COMMAND'].fillna(''),
             WorkDir=df['EXEC_CWD'].fillna(''),
+            # Kept as a STRING ('27', ''): non-EXIT rows report '', so an
+            # integer cast would NaN-ify them, and LSF exit codes are not
+            # always plain ints (signal forms exist on other LSF setups).
+            # Consumers read it via str() and blank-guard (CDM
+            # scheduler_state); the client wrapper pins the dtype through
+            # its CSV round-trip (see aview_hpc.aview_hpc.get_job_table).
+            ExitCode=df['EXIT_CODE'].fillna(''),
         )
 
         return df[self.JOB_TABLE_COLUMNS]

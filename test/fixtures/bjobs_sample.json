@@ -4,7 +4,7 @@
   "RECORDS": [
     {
       "JOBID": "5346451",
-      "JOB_NAME": "\/eng\/tools\/cm\/bin\/BHstart --BHbld_sys lnx86_64_opt",
+      "JOB_NAME": "/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt",
       "STAT": "RUN",
       "SUBMIT_TIME": "Sep 30 20:32:14 2026",
       "START_TIME": "Sep 30 20:32:15 2026",
@@ -13,8 +13,9 @@
       "RUNTIMELIMIT": "20000.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "13",
-      "COMMAND": "\/eng\/tools\/cm\/bin\/BHstart --BHbld_sys lnx86_64_opt",
-      "EXEC_CWD": "\/home\/ambinteg"
+      "COMMAND": "/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt",
+      "EXEC_CWD": "/home/ambinteg",
+      "EXIT_CODE": ""
     },
     {
       "JOBID": "5800001",
@@ -28,7 +29,8 @@
       "NEXEC_HOST": "",
       "NTHREADS": "",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/x.acf",
-      "EXEC_CWD": ""
+      "EXEC_CWD": "",
+      "EXIT_CODE": ""
     },
     {
       "JOBID": "5800002",
@@ -42,7 +44,8 @@
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/y.acf",
-      "EXEC_CWD": "\/home\/thornton\/hpc_tmp\/cdm_variant_0128_a.1234"
+      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0128_a.1234",
+      "EXIT_CODE": ""
     },
     {
       "JOBID": "5800003",
@@ -56,7 +59,8 @@
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/z.acf",
-      "EXEC_CWD": "\/home\/thornton\/hpc_tmp\/cdm_variant_0129_a.5678"
+      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0129_a.5678",
+      "EXIT_CODE": "27"
     },
     {
       "JOBID": "5800004",
@@ -70,7 +74,8 @@
       "NEXEC_HOST": "1",
       "NTHREADS": "4",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/w.acf",
-      "EXEC_CWD": "\/home\/thornton\/hpc_tmp\/cdm_variant_0130_a.9012"
+      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0130_a.9012",
+      "EXIT_CODE": ""
     },
     {
       "JOBID": "5800005",
@@ -84,7 +89,8 @@
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
       "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/v.acf",
-      "EXEC_CWD": "\/home\/thornton\/hpc_tmp\/cdm_variant_0131_a.3456"
+      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0131_a.3456",
+      "EXIT_CODE": "0"
     }
   ]
 }
