@@ -59,7 +59,9 @@ The scheduler key controls how aview_hpc parses job submissions and job tables:
   `submitted batch job <id>`, the job table is built from `sacct`.
 - **lsf**: submit responses are matched against `Job <id> is submitted`, the job table is built
   from `bjobs -a -o ... -json` and normalized to the same columns/states as the slurm table
-  (`PEND/RUN/DONE/EXIT` become `PENDING/RUNNING/COMPLETED/FAILED`). Note that `bjobs -a` only
+  (`PEND/RUN/DONE/EXIT` become `PENDING/RUNNING/COMPLETED/FAILED`), plus an `ExitCode` column
+  (0.5.3) carrying the LSF exit code for `EXIT` jobs ('' for rows that never exited; kept as a
+  string). Note that `bjobs -a` only
   reports jobs that are pending/running/suspended or finished *recently* (the cluster's
   `CLEAN_PERIOD`, commonly on the order of an hour) — older history requires `bhist` and is
   not included in the table. For jobs still running, LSF reports a *projected* finish time

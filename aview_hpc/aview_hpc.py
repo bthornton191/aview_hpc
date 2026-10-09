@@ -301,8 +301,13 @@ def get_job_table():
     if _clean_err(err):
         raise RuntimeError(err)
 
-    # Parse the csv output into a dataframe
-    return pd.read_csv(io.StringIO(out))
+    # Parse the csv output into a dataframe. ExitCode is pinned to str:
+    # the lsf backend reports '' for rows that never exited, so without
+    # the pin pandas re-types the column float64 ('27' -> 27.0 / NaN) and
+    # downstream notes read '(exit code 27.0)'. An unknown column name in
+    # `dtype` is ignored (older CLIs / the slurm table have no ExitCode),
+    # verified by test.
+    return pd.read_csv(io.StringIO(out), dtype={'ExitCode': str})
 
 
 def resubmit_job(remote_dir: Path, wait_for_completion: bool = False, **kwargs):
