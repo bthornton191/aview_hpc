@@ -6,6 +6,7 @@ captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
 10.1.0.15) plus synthetic records for states not present in the capture.
 """
 import importlib.util
+import io
 import json
 import logging
 import os
@@ -133,6 +134,7 @@ class TestLSFBackend(unittest.TestCase):
         self.assertIn('exec_cwd', cmd)
         self.assertIn('nthreads', cmd)
         self.assertIn('nexec_host', cmd)
+        self.assertIn('exit_code', cmd)
 
     def test_job_table_command_roundtrip(self):
         """The -o field list must contain every field the parser reads:
@@ -190,6 +192,17 @@ class TestLSFBackend(unittest.TestCase):
 
         failed_state = df[df['JobID'] == 5800003].iloc[0]['State']
         self.assertEqual(failed_state.lower(), 'failed')  # CDM contract
+
+        # exit_code column (live-verified shapes on sjlsf01 2026-10-09:
+        # 'exit 27' job -> "27"; RUN/DONE/PEND -> ""; the fixture's second
+        # DONE record carries "0" -- a DONE job that reports 0 must parse).
+        # Kept as str: an int cast would NaN-ify every non-EXIT row.
+        self.assertEqual(df[df['JobID'] == 5800003].iloc[0]['ExitCode'], '27')
+        self.assertEqual(df[df['JobID'] == 5800005].iloc[0]['ExitCode'], '0')
+        for jobid in (5346451, 5800001, 5800002, 5800004):
+            self.assertEqual(df[df['JobID'] == jobid].iloc[0]['ExitCode'], '')
+        # String dtype (pandas 2 'object', pandas 3 'str') -- never numeric.
+        self.assertIn(str(df['ExitCode'].dtype), ('object', 'str'))
 
         pending = df[df['JobID'] == 5800001].iloc[0]
         self.assertTrue(pd.isna(pending['Start']))
@@ -1038,6 +1051,61 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
             _parse_cli_json('no json here at all\n', 'submit_multi')
         self.assertIn('submit_multi', str(ctx.exception))
         self.assertIn('no json here', str(ctx.exception))
+
+
+class TestGetJobTableRoundTrip(unittest.TestCase):
+    """t_0f552d9b: the ExitCode column must survive the client wrapper's
+    CSV round trip as a clean string, the way CDM's scheduler_state reads
+    it (str(value) + blank guard -> note ' (exit code 27)').
+
+    The CLI prints the DataFrame with ``df.to_csv(index=False)`` and the
+    client wrapper re-parses with ``pd.read_csv``.  A column mixing '27'
+    and '' would re-parse as float64 (27.0 / NaN) WITHOUT the dtype pin in
+    ``aview_hpc.aview_hpc.get_job_table`` -- making CDM's note read
+    '(exit code 27.0)'.  These tests pin the pin.
+    """
+
+    def _client_table(self, csv_text):
+        """The wrapper's parse step, exactly as shipped."""
+        import aview_hpc.aview_hpc as client
+        with patch.object(client, 'run_cli', return_value=(csv_text, '')):
+            return client.get_job_table()
+
+    def test_exit_code_survives_csv_round_trip_as_string(self):
+        # What the CLI prints for the fixture table (EXIT '27' + blanks).
+        csv_text = (BJOBS_SAMPLE.parent / 'bjobs_cli_output.csv').read_text()
+        df = self._client_table(csv_text)
+        failed = df[df['State'] == 'FAILED'].iloc[0]
+        self.assertEqual(failed['ExitCode'], '27')
+        # String dtype (pandas 2 'object', pandas 3 'str') -- never float64.
+        self.assertIn(str(df['ExitCode'].dtype), ('object', 'str'))
+        # CDM's exact consumption path: str() + blank guard -> note.
+        exit_code = failed['ExitCode']
+        note_src = '' if pd.isna(exit_code) else str(exit_code).strip()
+        self.assertEqual(note_src, '27')
+        self.assertEqual(f' (exit code {note_src})', ' (exit code 27)')
+        # Blank rows stay blank, not NaN-as-float.
+        done = df[df['State'] == 'COMPLETED'].iloc[0]
+        self.assertTrue(done['ExitCode'] == '' or pd.isna(done['ExitCode']))
+
+    def test_dtype_pin_tolerates_a_table_without_the_column(self):
+        """A 0.5.2-shaped CSV (no ExitCode) must parse identically: an
+        unknown column name in read_csv(dtype=...) is ignored."""
+        csv_text = ('JobID,JobName,State\n'
+                    '1,old_shape,FAILED\n')
+        df = self._client_table(csv_text)
+        self.assertEqual(list(df.columns), ['JobID', 'JobName', 'State'])
+        self.assertEqual(df['State'].iloc[0], 'FAILED')
+
+    def test_unpinned_parse_would_erosion_the_code(self):
+        """RED guard: without the pin the value parses as 27.0 -- this
+        documents WHY the pin exists (float64 re-type of a mixed column)."""
+        csv_text = ('JobID,ExitCode\n'
+                    '1,27\n'
+                    '2,\n')
+        df = pd.read_csv(io.StringIO(csv_text))
+        self.assertEqual(float(df['ExitCode'].iloc[0]), 27.0)
+        self.assertEqual(str(df['ExitCode'].dtype), 'float64')
 
 
 if __name__ == '__main__':

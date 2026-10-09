@@ -1,0 +1,7 @@
+JobID,JobName,Start,End,Elapsed,State,Timelimit,NNodes,NCPUs,SubmitLine,WorkDir,ExitCode
+5346451,/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt,2026-09-30T20:32:15,2026-10-14T17:52:15,15:53:28,RUNNING,13-21:20:00,1,13,/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt,/home/ambinteg,
+5800001,aview_hpc_XXXX,,,00:00:00,PENDING,12:00:00,1,1,/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/x.acf,,
+5800002,cdm_variant_0128_a,2026-10-01T13:58:05,2026-10-01T14:01:44,00:03:39,COMPLETED,12:00:00,1,8,/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/y.acf,/home/thornton/hpc_tmp/cdm_variant_0128_a.1234,
+5800003,cdm_variant_0129_a,2026-10-01T13:58:06,2026-10-01T14:00:12,00:02:06,FAILED,12:00:00,1,8,/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/z.acf,/home/thornton/hpc_tmp/cdm_variant_0129_a.5678,27
+5800004,cdm_variant_0130_a,2026-10-01T13:59:00,,00:00:45,SUSPENDED,12:00:00,1,4,/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/w.acf,/home/thornton/hpc_tmp/cdm_variant_0130_a.9012,
+5800005,cdm_variant_0131_a,2026-09-29T09:00:05,2026-09-29T09:40:05,00:40:00,COMPLETED,1-16:00:00,1,8,/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/v.acf,/home/thornton/hpc_tmp/cdm_variant_0131_a.3456,0
