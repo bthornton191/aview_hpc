@@ -11,7 +11,9 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import sys
+import tempfile
 import types
 import unittest
 from io import StringIO
@@ -742,15 +744,17 @@ class TestLSFMemMb(unittest.TestCase):
 
 class TestSessionAppliesTranslation(unittest.TestCase):
     """HPCSession.submit/resubmit_job run kwargs through the backend's
-    translate_submit_kwargs before building the --option list. Verified
-    without a live host: a stubbed backend records what the SSH layer would
-    have executed."""
+    translate_submit_kwargs BEFORE the argv is handed to the transport
+    (0.5.0 seam), so both SSHTransport and LocalTransport submit the
+    translated argv. The SSH case is verified against the transport seam
+    (what exec_argv would have sent down the wire); the local case runs
+    the REAL LocalTransport against a recording fake submit script."""
 
-    def _make_session(self, scheduler_name):
+    def _make_session(self, scheduler_name, transport):
         from aview_hpc._cli import HPCSession
         session = HPCSession.__new__(HPCSession)
         session.backend = get_scheduler(scheduler_name)
-        session.submit_cmd = '/home/thornton/scripts/lsf.py'
+        session.transport = transport
         # Attributes __init__ would have set; skipped by __new__.
         session.job_name = None
         session.job_id = None
@@ -758,34 +762,71 @@ class TestSessionAppliesTranslation(unittest.TestCase):
         return session
 
     @staticmethod
-    def _chan(text: str):
-        """A minimal paramiko-like channel: read() returns bytes."""
-        return types.SimpleNamespace(read=lambda: text.encode())
-
-    def test_submit_lsf_translates_before_forwarding(self):
-        session = self._make_session('lsf')
-
+    def _ssh_style_transport(response='Job <530967> is submitted to queue lnx64'):
+        """A transport shaped like SSHTransport as _cli uses it: exec_argv
+        joins argv and shells it, so record the JOINED command exactly as
+        the SSH path would forward it."""
         forwarded = {}
 
-        def fake_exec(cmd):
-            forwarded['cmd'] = cmd
-            return (None, self._chan('Job <530967> is submitted to queue lnx64'),
-                    self._chan(''))
+        def fake_exec_shell(command):
+            forwarded['cmd'] = command
+            return response, ''
 
-        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
-        session.ftp = types.SimpleNamespace(
-            put=lambda *a, **k: None,
-            listdir=lambda d: [])
+        def fake_exec_argv(argv):
+            return fake_exec_shell(' '.join(str(a) for a in argv))
+
+        transport = types.SimpleNamespace(
+            exec_argv=fake_exec_argv,
+            exec_shell=fake_exec_shell,
+            # submit() uploads the acf/adm before running the command; the
+            # translation under test happens after, so the file ops can be
+            # no-ops (file contents are irrelevant to the argv check).
+            put_file=lambda local_path, remote_path: None,
+            copy_file=lambda src, dst: None)
+        return transport, forwarded
+
+    @staticmethod
+    def _fake_submit_script(directory: Path) -> Path:
+        """A recording lsf.py stand-in: echoes its argv into the job dir so
+        the test can see EXACTLY what a local-transport child received."""
+        script = directory / 'fake_submit_recording.py'
+        script.write_text(
+            '#!{python}\n'
+            'import os, sys\n'
+            'argv_file = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "child_argv.txt")\n'
+            'with open(argv_file, "w") as fh:\n'
+            '    fh.write(" ".join(sys.argv[1:]))\n'
+            'print("Job <530967> is submitted to queue lnx64")\n'
+            .format(python=sys.executable))
+        return script
+
+    def _local_session(self, scheduler_name='lsf'):
+        """A session over a REAL LocalTransport with a recording fake
+        submit script as submit_cmd (multi-word, like the VM config)."""
+        from aview_hpc.transport import LocalTransport
+        tmp = tempfile.mkdtemp(prefix='t8e_local_')
+        fake = self._fake_submit_script(Path(tmp))
+        job_dir = Path(tmp) / 'wd'
+        job_dir.mkdir()
+        (job_dir / 'myjob.acf').write_text('myjob.adm\n')
+        (job_dir / 'myjob.adm').write_text('model')
+        transport = LocalTransport(remote_root=Path(tmp))
+        session = self._make_session(scheduler_name, transport)
+        session.submit_cmd = '"{python}" {script}'.format(
+            python=sys.executable, script=fake.as_posix())
+        session.mkdtemp_remote = lambda name=None, n_rand=4: job_dir
         session.uploaded_files = {}
+        return session, Path(tmp), job_dir
 
-        # Bypass the upload machinery: point at an existing acf/adm pair so
-        # the file-copy loop runs without a real SFTP channel.
+    def test_submit_lsf_translates_before_ssh_transport(self):
+        transport, forwarded = self._ssh_style_transport()
+        session = self._make_session('lsf', transport)
+        session.submit_cmd = '/home/thornton/scripts/lsf.py'
+
         models = Path(__file__).parent / 'models'
-        acf = models / 'test.acf'
-        adm = models / 'test.adm'
         session.mkdtemp_remote = lambda name=None, n_rand=4: Path('/remote/wd')
-
-        session.submit(acf_file=acf, adm_file=adm,
+        session.uploaded_files = {}
+        session.submit(acf_file=models / 'test.acf', adm_file=models / 'test.adm',
                        mins=1000, mem='32G', nice=2147483645)
 
         cmd = forwarded['cmd']
@@ -797,24 +838,15 @@ class TestSessionAppliesTranslation(unittest.TestCase):
         self.assertNotIn('--nice', tokens)
         self.assertNotIn('2147483645', cmd)
 
-    def test_submit_slurm_forwards_verbatim(self):
-        session = self._make_session('slurm')
-
-        forwarded = {}
-
-        def fake_exec(cmd):
-            forwarded['cmd'] = cmd
-            return (None, self._chan('Submitted batch job 4242'),
-                    self._chan(''))
-
-        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
-        session.ftp = types.SimpleNamespace(
-            put=lambda *a, **k: None,
-            listdir=lambda d: [])
-        session.uploaded_files = {}
+    def test_submit_slurm_forwards_verbatim_through_ssh_transport(self):
+        transport, forwarded = self._ssh_style_transport(
+            'Submitted batch job 4242')
+        session = self._make_session('slurm', transport)
+        session.submit_cmd = 'sbatch_script.sh'
 
         models = Path(__file__).parent / 'models'
         session.mkdtemp_remote = lambda name=None, n_rand=4: Path('/remote/wd')
+        session.uploaded_files = {}
         session.submit(acf_file=models / 'test.acf', adm_file=models / 'test.adm',
                        mins=1000, mem='32G', nice=2147483645)
 
@@ -822,18 +854,20 @@ class TestSessionAppliesTranslation(unittest.TestCase):
         self.assertIn('--mem 32G', cmd)
         self.assertIn('--nice 2147483645', cmd)
 
-    def test_resubmit_lsf_translates_before_forwarding(self):
-        session = self._make_session('lsf')
+    def test_resubmit_lsf_translates_before_ssh_transport(self):
+        transport, forwarded = self._ssh_style_transport(
+            'Job <530968> is submitted to queue lnx64')
+        session = self._make_session('lsf', transport)
+        session.submit_cmd = '/home/thornton/scripts/lsf.py'
 
-        forwarded = {}
+        def fake_exec_cleanup(backend, remote_dir):
+            pass
 
-        def fake_exec(cmd):
-            forwarded['cmd'] = cmd
-            return (None, self._chan('Job <530968> is submitted to queue lnx64'),
-                    self._chan(''))
-
-        session.ssh = types.SimpleNamespace(exec_command=fake_exec)
-        session.ftp = types.SimpleNamespace(
+        session.transport = types.SimpleNamespace(
+            exec_argv=lambda argv: (
+                forwarded.__setitem__('cmd', ' '.join(str(a) for a in argv)),
+                ('Job <530968> is submitted to queue lnx64', ''))[1],
+            exec_cleanup=fake_exec_cleanup,
             listdir=lambda d: ['myjob.acf'])
 
         session.resubmit_job(Path('/remote/wd'), mins=720, mem='32G',
@@ -842,6 +876,45 @@ class TestSessionAppliesTranslation(unittest.TestCase):
         cmd = forwarded['cmd']
         self.assertIn('--mem_mb 32768', cmd)
         self.assertNotIn('--nice', cmd)
+
+    def test_submit_lsf_translates_through_real_local_transport(self):
+        """The full local-mode stack: a real LocalTransport spawns a real
+        child process (the recording fake submit script), proving the
+        translated argv reaches an actually-spawned scheduler child."""
+        session, tmp, job_dir = self._local_session()
+        try:
+            models = Path(__file__).parent / 'models'
+            session.submit(acf_file=models / 'test.acf', adm_file=models / 'test.adm',
+                           mins=1000, mem='32G', nice=2147483645)
+
+            echo = job_dir / 'child_argv.txt'
+            self.assertTrue(echo.exists(),
+                            'child did not record argv; dir has '
+                            f'{session.transport.listdir(job_dir.as_posix())}')
+            argv = echo.read_text().split()
+            self.assertIn('--mem_mb', argv)
+            self.assertIn('32768', argv)
+            self.assertNotIn('--mem', argv)
+            self.assertNotIn('--nice', argv)
+            self.assertNotIn('2147483645', argv)
+            self.assertIn('--mins', argv)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_resubmit_lsf_translates_through_real_local_transport(self):
+        session, tmp, job_dir = self._local_session()
+        try:
+            session.resubmit_job(job_dir, mins=720, mem='32G',
+                                 nice=2147483645)
+
+            echo = job_dir / 'child_argv.txt'
+            self.assertTrue(echo.exists())
+            argv = echo.read_text().split()
+            self.assertIn('--mem_mb', argv)
+            self.assertIn('32768', argv)
+            self.assertNotIn('--nice', argv)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == '__main__':
