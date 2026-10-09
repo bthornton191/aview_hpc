@@ -16,6 +16,7 @@ file (``slurm`` (the default, for backwards compatibility) or ``lsf``).
 import glob
 import json
 import logging
+import math
 import re
 from io import StringIO
 from pathlib import Path
@@ -65,6 +66,26 @@ class SchedulerBackend:
         """
         raise NotImplementedError
 
+    def translate_submit_kwargs(self, kwargs: dict, logger=None) -> dict:
+        """Translate generic submit kwargs into this scheduler's vocabulary.
+
+        Callers (e.g. the CDM qual harness) pass scheduler-AGNOSTIC options
+        to ``submit``/``submit_multi``/``resubmit_job``: ``mem`` (a memory
+        request, Slurm syntax e.g. ``'32G'``), ``nice`` (a scheduling
+        priority), ``mins`` (a wall-clock limit). Those kwargs are forwarded
+        as ``--<name> <value>`` to the per-scheduler submit script named by
+        the ``submit_cmd`` config key, which accepts only ITS OWN option
+        set and deliberately rejects anything else (trailing words would
+        become the job COMMAND line on LSF; lsf.py exits with "Unsupported
+        arguments forwarded to bsub").
+
+        The base implementation is the identity: a backend that has no
+        translation needs does nothing, and unknown kwargs keep flowing to
+        the submit script exactly as before (so its guard still fires for
+        genuinely unsupported options).
+        """
+        return kwargs
+
 
 class SlurmBackend(SchedulerBackend):
     """The historical aview_hpc behavior (Hexagon/Romax DEWET cluster)."""
@@ -72,6 +93,12 @@ class SlurmBackend(SchedulerBackend):
     name = 'slurm'
     re_submission_response = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
     running_states = ['RUNNING']
+
+    def translate_submit_kwargs(self, kwargs: dict, logger=None) -> dict:
+        """Identity: the DEWET sbatch-era submit script took ``--mem`` and
+        ``--nice`` verbatim, and its behavior is frozen. Byte-identical
+        passthrough for every kwarg, known or unknown."""
+        return kwargs
 
     #: Raw `sacct -o` field specifiers (NOT the DataFrame column names --
     #: sacct capitalizes these itself, e.g. jobid -> JobID).
@@ -273,6 +300,72 @@ class LSFBackend(SchedulerBackend):
     def cleanup_argv(self, remote_dir: Path) -> List[str]:
         files = sorted(glob.glob(f'{Path(remote_dir).as_posix()}/*.lsf'))
         return ['rm', '-f', *files] if files else ['true']
+
+    # --- submit-kwarg translation -----------------------------------------
+    # Slurm syntax to LSF units, e.g. '32G' -> 32768 (MB).
+    RE_MEM_SLURM = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*([kmg]?)(?:i?b)?\s*$', re.I)
+    MEM_UNIT_MULTIPLIER_MB = {'': 1, 'k': 1 / 1024, 'm': 1, 'g': 1024}
+
+    def translate_submit_kwargs(self, kwargs: dict, logger=None) -> dict:
+        """Translate generic submit kwargs into the LSF submit script's
+        vocabulary (``hpc_scripts/lsf.py`` on the submit host).
+
+        ``mem`` (Slurm syntax, e.g. ``'32G'``) becomes ``mem_mb`` -- the
+        integer MB form lsf.py's ``--mem_mb`` option accepts, which it
+        renders as ``rusage[mem=<MB>]`` merged into the single ``-R``
+        (multiple ``-R`` are rejected by this LSF; see lsf.py
+        build_bsub_command).
+
+        ``nice`` is DROPPED: bsub has no unprivileged nice equivalent (the
+        closest, ``-sp`` priority, needs farm-admin policy and changes
+        scheduling semantics). Dropping is logged at DEBUG so the decision
+        is visible without reddening a healthy submit.
+
+        Every other kwarg passes through unchanged, and unknown kwargs
+        still reach the submit script so its unknown-argument guard fires
+        (deliberately: a genuinely unsupported option must die loudly, not
+        be silently swallowed here).
+
+        Background: the CDM qual harness has always passed
+        ``mem=JOB_MEM_GB, nice=MAX_NICE`` -- sbatch-era options from the
+        retired DEWET cluster. Under slurm they were forwarded verbatim;
+        under lsf they were rejected ("Unsupported arguments forwarded to
+        bsub", CI run 37824964058 2026-10-08). Translating HERE keeps the
+        client scheduler-configurable: the same generic kwargs work on
+        Windows+Slurm, Windows+LSF and Linux+LSF purely via ~/.aview_hpc,
+        with no scheduler-specific values in any caller.
+        """
+        translated = {}
+        dropped = []
+        for key, value in kwargs.items():
+            if key == 'mem':
+                translated['mem_mb'] = self._mem_to_mb(value)
+            elif key == 'nice':
+                dropped.append(f'nice={value}')
+            else:
+                translated[key] = value
+        log = logger if logger is not None else LOG
+        if dropped:
+            log.debug('LSF backend dropped %s: bsub has no equivalent option '
+                      '(see translate_submit_kwargs).', ', '.join(dropped))
+        return translated
+
+    def _mem_to_mb(self, value) -> int:
+        """Slurm memory syntax ('32G', '512M', '2048', '1.5g') to integer MB.
+
+        ROUNDS UP: rusage[mem=] is a per-process reservation ceiling on this
+        farm, and rounding a 1.5g request DOWN to 1536 MB would silently
+        shrink the request below what the caller asked for.
+        """
+        match = self.RE_MEM_SLURM.match(str(value))
+        if match is None:
+            raise ValueError(
+                f'Cannot translate mem={value!r} to LSF rusage megabytes: '
+                'expected Slurm syntax like 32G, 512M or 2048 (k/m/g suffix).')
+        number, unit = match.groups()
+        multiplier = self.MEM_UNIT_MULTIPLIER_MB[unit.lower()]
+        mb = float(number) * multiplier
+        return int(math.ceil(mb))
 
 
 _BACKENDS = {backend.name: backend for backend in (SlurmBackend, LSFBackend)}
