@@ -132,6 +132,7 @@ class TestLSFBackend(unittest.TestCase):
         self.assertTrue(cmd.startswith('env LC_ALL=C /grid/sfi/farm/bin/bjobs -a -o "'))
         self.assertTrue(cmd.endswith('" -json'))
         self.assertIn('exec_cwd', cmd)
+        self.assertIn('sub_cwd', cmd)
         self.assertIn('nthreads', cmd)
         self.assertIn('nexec_host', cmd)
         self.assertIn('exit_code', cmd)
@@ -207,6 +208,61 @@ class TestLSFBackend(unittest.TestCase):
         pending = df[df['JobID'] == 5800001].iloc[0]
         self.assertTrue(pd.isna(pending['Start']))
         self.assertEqual(pending['Elapsed'], '00:00:00')
+        # PEND jobs get a WorkDir from SUB_CWD (t_96514c3c): LSF leaves
+        # EXEC_CWD empty until dispatch, so a queued aview_hpc job
+        # (lsf.py runs with cwd = remote dir) is only findable via SUB_CWD.
+        # This is the set-83 regression shape (run 37939750883: two sub-sims
+        # read as "absent" for 900 s and killed while PEND).
+        self.assertEqual(pending['State'], 'PENDING')
+        self.assertEqual(pending['WorkDir'], '/home/thornton/hpc_tmp/x.abcd')
+
+        # RUN rows: EXEC_CWD is authoritative (SUB_CWD == EXEC_CWD live, but
+        # the fill must never be able to override a populated EXEC_CWD).
+        self.assertEqual(df[df['JobID'] == 5346451].iloc[0]['WorkDir'], '/home/ambinteg')
+
+    def test_parse_job_table_dollar_home_sub_cwd_degrades(self):
+        """"$HOME" (submission cwd not representable) must NOT become a
+        WorkDir: the fill degrades to '' exactly as pre-0.5.4, so a
+        WorkDir-keyed consumer still reads the row as absent rather than
+        matching against a bogus literal path."""
+        import json as _json
+        records = [{'JOBID': '5800010', 'JOB_NAME': 'x', 'STAT': 'PEND',
+                    'SUBMIT_TIME': 'Oct  1 14:02:11 2026',
+                    'START_TIME': '', 'FINISH_TIME': '',
+                    'RUN_TIME': '0 second(s)', 'RUNTIMELIMIT': '720.0',
+                    'NEXEC_HOST': '', 'NTHREADS': '',
+                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
+                    'EXEC_CWD': '', 'SUB_CWD': '$HOME', 'EXIT_CODE': ''}]
+        df = self.backend.parse_job_table(
+            _json.dumps({'COMMAND': 'bjobs', 'JOBS': 1, 'RECORDS': records}))
+        self.assertEqual(df.iloc[0]['State'], 'PENDING')
+        self.assertEqual(df.iloc[0]['WorkDir'], '')
+
+    def test_parse_job_table_missing_sub_cwd_key(self):
+        """Records without a SUB_CWD key (an older bjobs, or a response
+        built from the pre-0.5.4 field list) must parse unchanged: EXEC_CWD
+        still becomes WorkDir and an empty EXEC_CWD stays ''."""
+        import json as _json
+        records = [{'JOBID': '5800011', 'JOB_NAME': 'x', 'STAT': 'PEND',
+                    'SUBMIT_TIME': 'Oct  1 14:02:11 2026',
+                    'START_TIME': '', 'FINISH_TIME': '',
+                    'RUN_TIME': '0 second(s)', 'RUNTIMELIMIT': '720.0',
+                    'NEXEC_HOST': '', 'NTHREADS': '',
+                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
+                    'EXEC_CWD': '', 'EXIT_CODE': ''},
+                   {'JOBID': '5800012', 'JOB_NAME': 'x', 'STAT': 'RUN',
+                    'SUBMIT_TIME': 'Oct  1 14:02:11 2026',
+                    'START_TIME': 'Oct  1 14:02:12 2026',
+                    'FINISH_TIME': '', 'RUN_TIME': '0 second(s)',
+                    'RUNTIMELIMIT': '720.0', 'NEXEC_HOST': '1',
+                    'NTHREADS': '8',
+                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
+                    'EXEC_CWD': '/home/thornton/hpc_tmp/r', 'EXIT_CODE': ''}]
+        df = self.backend.parse_job_table(
+            _json.dumps({'COMMAND': 'bjobs', 'JOBS': 2, 'RECORDS': records}))
+        self.assertEqual(df[df['JobID'] == 5800011].iloc[0]['WorkDir'], '')
+        self.assertEqual(df[df['JobID'] == 5800012].iloc[0]['WorkDir'],
+                         '/home/thornton/hpc_tmp/r')
 
     def test_parse_job_table_empty(self):
         text = '{"COMMAND":"bjobs","JOBS":0,"RECORDS":[]}'
