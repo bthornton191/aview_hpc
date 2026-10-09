@@ -89,6 +89,24 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     every non-remote ``Path`` argument to an absolute path itself, so the
     chdir only has to cover paths the caller passed as relative strings).
 
+    Hermetic stdout (t_11595f7b): the CLI's machine-readable stdout must
+    contain ONLY the CLI's own final ``print``.  The HOST process may
+    configure ROOT logging handlers whose ``emit()`` writes straight to
+    ``sys.stdout`` -- the CDM plugin inside Adams View does exactly this
+    (``AdamsLogFileHandler.emit`` is ``print(msg)``, ``general/log.py``),
+    and under ``redirect_stdout`` every such record landed in the JSON
+    capture buffer AHEAD of the payload: CI run 37923731507 submitted LSF
+    job 1337242 (DONE, clean stderr) and then died at
+    ``json.loads(out)`` char 0.  Swapping ``handler.stream`` (the 0.5.1
+    approach) only covers stream-based handlers; print-, socket- or
+    queue-based handlers bypass it.  For the duration of the call every
+    existing root handler is DETACHED and one scratch ``StreamHandler``
+    collects the CLI's logging (which also keeps ``logging.lastResort``
+    from ever firing); the original handlers are re-attached, in order,
+    in the ``finally`` block.  Host records emitted during the call are
+    captured into the scratch buffer -- the same routing the 0.5.1 stream
+    swap applied, now complete.
+
     Error contract (kept identical to the frozen-exe subprocess): any
     failure of ``main()`` -- a real exception, ``SystemExit`` from an
     ``exit(2)`` CLI error path, DNS/SSH errors raised out of the
@@ -100,8 +118,8 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     catch only ``RuntimeError``; letting the raw exception class escape
     would break their retry/abort handling (review round 1, t_d1685315).
 
-    Process state (``sys.excepthook``, root logger level, handler
-    streams) is saved before the call and restored in the ``finally``
+    Process state (``sys.excepthook``, root logger level, root handler
+    set) is saved before the call and restored in the ``finally``
     block: ``main()`` installs its own ``sys.excepthook`` and sets the
     root level from ``--log_level`` (default INFO); leaving those set
     would permanently change the host process (Adams View) after a
@@ -125,27 +143,29 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     old_root_level = root.level
     out_io, err_io = io.StringIO(), io.StringIO()
 
-    # The CLI's logging must not leak into the caller's stderr capture:
+    # The CLI's logging must not leak into the caller's stream captures:
     # aview_hpc.aview_hpc treats any non-UserWarning stderr as a hard
-    # error (historic exe contract). Two leak paths exist:
-    #   1. handlers on the root logger -> their stream is swapped to a
-    #      scratch buffer and restored afterwards;
-    #   2. NO handlers at all (the case inside Adams View: probed on
-    #      sjcvl-thornton, root.handlers == []) -> logging falls back to
-    #      logging.lastResort, a _StderrHandler that writes straight to
-    #      sys.stderr, which redirect_stderr captures as process stderr.
-    #      A temporary root handler is installed for the duration so
-    #      lastResort never fires.
-    saved_streams = [(h, getattr(h, 'stream', None)) for h in root.handlers]
-    added_handler = None
+    # error (historic exe contract), and the JSON on stdout must stay
+    # parseable. Two leak paths exist:
+    #   1. handlers on the root logger. Stream-based handlers were
+    #      swapped (0.5.1); print-based handlers (CDM's
+    #      AdamsLogFileHandler inside Adams View) STILL wrote to
+    #      sys.stdout/sys.stderr via their emit(), polluting the JSON
+    #      (t_11595f7b, run 37923731507). Every existing root handler is
+    #      therefore DETACHED for the duration and re-attached in order
+    #      in the finally block -- regardless of how its emit() writes.
+    #   2. NO handlers at all (the case inside a fresh Adams View:
+    #      probed on sjcvl-thornton, root.handlers == []) -> logging
+    #      falls back to logging.lastResort, a _StderrHandler that
+    #      writes straight to sys.stderr, which redirect_stderr captures
+    #      as process stderr. The scratch handler below also covers this.
+    saved_handlers = list(root.handlers)
     log_io = io.StringIO()
-    if not root.handlers:
-        added_handler = logging.StreamHandler(log_io)
-        root.addHandler(added_handler)
-    else:
-        for handler, _ in saved_streams:
-            if hasattr(handler, 'stream'):
-                handler.stream = log_io
+    scratch_handler = logging.StreamHandler(log_io)
+    scratch_handler.setLevel(root.level)
+    for handler in saved_handlers:
+        root.removeHandler(handler)
+    root.addHandler(scratch_handler)
 
     sys.argv = ['aview_hpc', *argv]
     try:
@@ -169,12 +189,9 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
         sys.argv = old_argv
         sys.excepthook = old_excepthook
         root.setLevel(old_root_level)
-        if added_handler is not None:
-            root.removeHandler(added_handler)
-        else:
-            for handler, stream in saved_streams:
-                if hasattr(handler, 'stream'):
-                    handler.stream = stream
+        root.removeHandler(scratch_handler)
+        for handler in saved_handlers:
+            root.addHandler(handler)
         if str(old_cwd) != str(Path.cwd()):
             os.chdir(str(old_cwd))
 

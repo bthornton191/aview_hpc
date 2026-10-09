@@ -917,5 +917,128 @@ class TestSessionAppliesTranslation(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
+    """t_11595f7b acceptance: a ``submit_multi`` ROUND TRIP where chatter
+    reaches stdout at BOTH layers still returns the parsed JSON.
+
+    The full client stack is exercised, in-process, with no cluster:
+
+    ``aview_hpc.aview_hpc.submit_multi`` (the client wrapper the CDM
+    harness calls) -> ``run_cli`` (POSIX in-process branch) ->
+    ``_cli.main`` (the REAL CLI: argparse, HPCSession.submit, backend
+    translation, LocalTransport) -> a fake submit script (stand-in for
+    ~/scripts/lsf.py) run as a REAL child process that prints noise to
+    ITS stdout before the LSF submission line.
+
+    On top of that, the HOST root logger carries a print-based handler
+    (CDM's AdamsLogFileHandler shape) -- the exact CI run 37923731507
+    configuration that made ``json.loads(out)`` die at char 0 after LSF
+    1337242 was already submitted.
+    """
+
+    class _PrintRootHandler(logging.Handler):
+        def emit(self, record):
+            print(self.format(record))
+
+    def _fake_submit_script(self, directory: Path) -> Path:
+        """Stand-in lsf.py: prints noise lines to stdout BEFORE the LSF
+        'Job <id> is submitted' line (real lsf.py prints 'Running: bsub
+        ...'; bsub prints its own line after)."""
+        script = directory / 'fake_lsf_noisy.py'
+        script.write_text(
+            '#!{python}\n'
+            'import sys\n'
+            'print("Running: bsub -q lnx64 -P ADAMS:2023.4.1:AE:qual:NNL ...")\n'
+            'print("Job <4242> is submitted to queue lnx64")\n'
+            .format(python=sys.executable))
+        return script
+
+    def _fake_adm(self, directory: Path, name: str) -> Path:
+        adm = directory / name
+        adm.write_text('model\n')
+        return adm
+
+    def test_round_trip_with_stdout_chatter_and_host_print_handler(self):
+        import aview_hpc.platform as platform_mod
+        from aview_hpc import aview_hpc as client_mod
+        from aview_hpc.transport import LocalTransport
+
+        tmp = tempfile.mkdtemp(prefix='t11595_roundtrip_', dir=str(Path.home()))
+        root_logger = logging.getLogger()
+        saved_handlers = list(root_logger.handlers)
+        saved_level = root_logger.level
+        ph = self._PrintRootHandler()
+        try:
+            # Host state exactly as the CDM plugin leaves it inside Adams
+            # View: a print-based root handler at INFO.
+            for h in saved_handlers:
+                root_logger.removeHandler(h)
+            root_logger.addHandler(ph)
+            root_logger.setLevel(logging.INFO)
+
+            fake = self._fake_submit_script(Path(tmp))
+            adm = self._fake_adm(Path(tmp), 'set_1.adm')
+            acf = Path(tmp) / 'set_1.acf'
+            acf.write_text('set_1.adm\n')
+
+            # The REAL config machinery must resolve to this fake submit
+            # command + local transport + lsf backend + a farm-visible
+            # root (the tmp dir), without touching ~/.aview_hpc.
+            cfg = {'host': 'localhost',
+                   'username': 'testuser',
+                   'scheduler': 'lsf',
+                   'submit_cmd': f'"{sys.executable}" {fake.as_posix()}',
+                   'remote_tempdir': tmp,
+                   'transport': 'local'}
+
+            with patch.object(platform_mod, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.get_config', return_value=cfg), \
+                 patch('aview_hpc.config.get_config', return_value=cfg), \
+                 patch('aview_hpc.transport.get_config', return_value=cfg):
+                remote_dirs, job_names, job_ids = client_mod.submit_multi(
+                    acf_files=[acf],
+                    adm_files=[adm],
+                    aux_files=[[]],
+                    mins=50400,   # the harness's real kwarg (base_test MINS)
+                    mem='32G',    # JOB_MEM_GB
+                    nice=2147483645)  # MAX_NICE
+
+            self.assertEqual(len(remote_dirs), 1)
+            self.assertEqual(job_names, ['set_1'])
+            self.assertEqual(job_ids, [4242])
+            self.assertIn(tmp, str(remote_dirs[0]))
+        finally:
+            root_logger.removeHandler(ph)
+            for h in saved_handlers:
+                root_logger.addHandler(h)
+            root_logger.setLevel(saved_level)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_parse_cli_json_defensive_layers(self):
+        from aview_hpc.aview_hpc import _parse_cli_json
+        # Clean buffer: parsed directly.
+        self.assertEqual(_parse_cli_json('{"a": 1}\n', 'x'), {'a': 1})
+        # Chatter before the payload: last JSON line wins.
+        noisy = ('Running: bsub -q lnx64\n'
+                 'Output: Job <4242> is submitted to queue lnx64\n'
+                 '{"remote_dirs": ["/r/d"], "job_names": ["j"], "job_ids": [7]}\n')
+        self.assertEqual(_parse_cli_json(noisy, 'submit_multi'),
+                         {'remote_dirs': ['/r/d'], 'job_names': ['j'],
+                          'job_ids': [7]})
+        # A log line that PARSES as a JSON object but is not the payload
+        # would be a false positive only if it came AFTER the payload --
+        # the CLI's payload is the final print, so scanning from the end
+        # finds the payload first even if a JSON-looking log line exists.
+        noisy2 = ('{"log": "not the payload"}\n'
+                  '{"remote_dirs": ["/r/d2"], "job_names": ["j2"], "job_ids": [8]}\n')
+        self.assertEqual(_parse_cli_json(noisy2, 'submit_multi')['job_ids'], [8])
+        # Nothing parseable: RuntimeError (which the CDM harness retries),
+        # carrying the captured stdout for diagnosis.
+        with self.assertRaises(RuntimeError) as ctx:
+            _parse_cli_json('no json here at all\n', 'submit_multi')
+        self.assertIn('submit_multi', str(ctx.exception))
+        self.assertIn('no json here', str(ctx.exception))
+
+
 if __name__ == '__main__':
     unittest.main()
