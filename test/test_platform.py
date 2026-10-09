@@ -15,6 +15,7 @@ patching ``os.name`` globally makes ``pathlib.Path`` instantiate the other
 platform's flavour and raise).
 """
 
+import logging
 import sys
 import types
 import unittest
@@ -339,6 +340,131 @@ class TestPosixDispatch(unittest.TestCase):
                              if '_pkg_version_for_tests' in platform.__dict__
                              else __import__('aview_hpc.version',
                                              fromlist=['version']).version)
+
+
+class PrintBasedRootHandler(logging.Handler):
+    """A root-logger handler whose emit() writes via print(), exactly like
+    the CDM plugin's AdamsLogFileHandler inside Adams View (general/log.py:
+    ``emit`` is ``with message_window_quiet(): print(msg)``).
+
+    It has NO ``stream`` attribute, so the 0.5.1 stream-swap could not
+    re-point it: under ``redirect_stdout`` its records landed in the JSON
+    capture buffer ahead of the payload (t_11595f7b, CI run 37923731507:
+    LSF 1337242 DONE, then json.loads(out) died at char 0).
+    """
+
+    def emit(self, record):
+        print(self.format(record))
+
+
+class TestHermeticInprocessCapture(unittest.TestCase):
+    """The in-process CLI stdout must contain ONLY the CLI's payload,
+    no matter what logging handlers the HOST process installed on the
+    root logger (t_11595f7b)."""
+
+    def _run_with_host_handlers(self, handlers, main):
+        import logging as _logging
+        root = _logging.getLogger()
+        saved = list(root.handlers)
+        saved_level = root.level
+        for h in saved:
+            root.removeHandler(h)
+        for h in handlers:
+            root.addHandler(h)
+        root.setLevel(_logging.INFO)
+        try:
+            with patch.object(platform, 'IS_WINDOWS', False), \
+                 patch('aview_hpc._cli.main', main):
+                return run_cli(['submit_multi', 'data.json'])
+        finally:
+            for h in handlers:
+                root.removeHandler(h)
+            for h in saved:
+                root.addHandler(h)
+            root.setLevel(saved_level)
+
+    @staticmethod
+    def _cli_like_main():
+        """Logs INFO records (like _cli.HPCSession.submit does) and then
+        prints the JSON payload (like _cli.main's submit_multi branch)."""
+        import json
+
+        def main():
+            logging.getLogger('aview_hpc._cli').info('Arguments: {...}')
+            logging.getLogger('aview_hpc._cli').info(
+                'Running: /home/thornton/scripts/lsf.py '
+                '/home/thornton/hpc_tmp/set_1.acf --mins 50400 --mem_mb 32768')
+            logging.getLogger('aview_hpc._cli').info(
+                'Output: Job <1337242> is submitted to queue lnx64')
+            print(json.dumps({'remote_dirs': ['/r/set_1.x'],
+                              'job_names': ['set_1'],
+                              'job_ids': [1337242]}))
+        return main
+
+    def test_print_based_root_handler_cannot_pollute_stdout(self):
+        # The CI-37923731507 reproduction: a print-based root handler
+        # (CDM's AdamsLogFileHandler) emitting INFO records under
+        # redirect_stdout. Pre-fix this prepended log lines to the JSON
+        # and json.loads died at char 0; stdout must now be ONLY the JSON.
+        import json
+        out, err = self._run_with_host_handlers([PrintBasedRootHandler()],
+                                                self._cli_like_main())
+        self.assertEqual(json.loads(out),
+                         {'remote_dirs': ['/r/set_1.x'],
+                          'job_names': ['set_1'],
+                          'job_ids': [1337242]})
+        self.assertNotIn('Running:', out)
+        self.assertNotIn('Job <1337242>', out)
+        self.assertEqual(err, '')
+
+    def test_stream_handler_host_keeps_working_and_is_restored(self):
+        # A host StreamHandler (stream-based) must not leak into either
+        # capture, and must be re-attached with its original stream.
+        import logging as _logging
+        import io as _io
+        stream = _io.StringIO()
+        handler = _logging.StreamHandler(stream)
+        out, err = self._run_with_host_handlers([handler],
+                                                self._cli_like_main())
+        import json
+        json.loads(out)  # must parse: whole buffer is the payload
+        self.assertNotIn('Running:', out)
+        # The CLI's records went to the scratch buffer, not the host
+        # handler's stream (host handlers are detached for the duration).
+        self.assertEqual(stream.getvalue(), '')
+        self.assertIs(handler.stream, stream)
+        # ... and the handler object is fully functional afterwards
+        # (re-attach it, as its owner would, and emit):
+        root = _logging.getLogger()
+        root.addHandler(handler)
+        try:
+            logging.getLogger('aview_hpc.test').warning('host handler alive')
+            self.assertIn('host handler alive', stream.getvalue())
+        finally:
+            root.removeHandler(handler)
+
+    def test_handlers_restored_in_order_after_call(self):
+        import logging as _logging
+        root_before = list(_logging.getLogger().handlers)
+        first = PrintBasedRootHandler()
+        second = PrintBasedRootHandler()
+        out, _ = self._run_with_host_handlers([first, second],
+                                              self._cli_like_main())
+        root = _logging.getLogger()
+        # The ORIGINAL handler set is restored, in its original order,
+        # and neither the test handlers nor a scratch handler remain.
+        self.assertEqual(root.handlers, root_before)
+        self.assertNotIn(first, root.handlers)
+        self.assertNotIn(second, root.handlers)
+
+    def test_no_handlers_case_still_captured_not_stderr(self):
+        # Fresh Adams View: root.handlers == [] -> lastResort would write
+        # to sys.stderr; the scratch handler must still absorb the CLI's
+        # records (0.5.1 behaviour preserved).
+        out, err = self._run_with_host_handlers([], self._cli_like_main())
+        import json
+        json.loads(out)
+        self.assertEqual(err, '')
 
 
 class TestAviewHpcModuleUsesDispatch(unittest.TestCase):

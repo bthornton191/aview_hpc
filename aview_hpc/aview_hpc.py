@@ -23,6 +23,42 @@ def _clean_err(err):
     return None
 
 
+def _parse_cli_json(out: str, what: str):
+    """Parse the CLI's machine-readable stdout, defensively.
+
+    Layer 1 is the hermetic in-process capture (platform.py, t_11595f7b):
+    the CLI's stdout should contain ONLY the JSON.  But the client has
+    survived a generation of leak paths (host print-based logging
+    handlers under ``redirect_stdout``, CI run 37923731507), so this
+    parser does not trust the whole buffer:
+
+    * the whole buffer is tried first (the normal, clean case);
+    * failing that, the LAST line that parses as a JSON object wins --
+      the CLI's payload is the final ``print`` of the command, so any
+      preceding chatter (log records, transport echoes) is skipped, and
+      a later record cannot exist after it;
+    * failing that, a RuntimeError carrying a short prefix of the actual
+      captured stdout replaces the bare ``JSONDecodeError`` the harness
+      used to die on (hpc_jobs retries on RuntimeError, not on
+      JSONDecodeError -- a bare decoder error killed set 1 in ~1 min).
+    """
+    try:
+        return json.loads(out)
+    except ValueError:
+        pass
+    for line in reversed(out.splitlines()):
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            return json.loads(line)
+        except ValueError:
+            continue
+    raise RuntimeError(
+        f'{what}: the aview_hpc CLI printed no JSON to stdout. '
+        f'Captured stdout (first 400 chars): {out[:400]!r}')
+
+
 def submit(acf_file: Path,
            adm_file: Path = None,
            aux_files: List[Path] = None,
@@ -76,7 +112,7 @@ def submit(acf_file: Path,
     if _clean_err(err):
         raise RuntimeError(err)
 
-    output = json.loads(out)
+    output = _parse_cli_json(out, what='submit')
 
     remote_dir = Path(output['remote_dir'])
     job_name = output['job_name']
@@ -144,7 +180,7 @@ def submit_multi(acf_files: List[Path],
         if _clean_err(err):
             raise RuntimeError(err)
 
-        output = json.loads(out)
+        output = _parse_cli_json(out, what='submit_multi')
 
         remote_dirs = [Path(d) for d in output['remote_dirs']]
         job_names = output['job_names']
@@ -203,7 +239,7 @@ def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Pa
     if _clean_err(err):
         raise RuntimeError(err)
 
-    status = json.loads(out)
+    status = _parse_cli_json(out, what='get_remote_dir_status')
 
     # convert types
     for s in status:
@@ -280,7 +316,7 @@ def resubmit_job(remote_dir: Path, wait_for_completion: bool = False, **kwargs):
     if _clean_err(err):
         raise RuntimeError(err)
 
-    output = json.loads(out)
+    output = _parse_cli_json(out, what='resubmit_job')
 
     remote_dir_ = Path(output['remote_dir'])
     job_name = output['job_name']
