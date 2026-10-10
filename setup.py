@@ -1,7 +1,7 @@
 import setuptools
 import pkg
 
-VERSION = '0.5.3'      # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION IN version.py
+VERSION = '0.5.4'      # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION IN version.py
 
 with open("README.md", "r") as fh:
     long_description = fh.read()

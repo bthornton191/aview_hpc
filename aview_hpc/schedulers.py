@@ -216,6 +216,17 @@ class LSFBackend(SchedulerBackend):
     * ``-u`` is intentionally not passed, so bjobs reports only the
       invoking user's jobs. This matches what consumers need and keeps the
       response small (``-u all`` returns >160k records on this farm).
+    * ``sub_cwd`` is requested and used to fill ``WorkDir`` for PEND jobs:
+      LSF leaves ``EXEC_CWD`` empty until a job is dispatched, while
+      ``SUB_CWD`` is fixed at submission and equals the submission cwd
+      (live-verified 2026-10-09: an aview_hpc job -- ``hpc_scripts/lsf.py``
+      runs with cwd = remote dir -- reports ``SUB_CWD`` = the remote dir
+      already while PEND; once RUN, ``EXEC_CWD == SUB_CWD ==`` remote dir).
+      ``WorkDir`` is therefore ``EXEC_CWD`` or, when empty, ``SUB_CWD``
+      (with ``'$HOME'``/empty degrading to empty, i.e. the pre-0.5.4
+      behavior for non-representable cwds). The slurm backend does not
+      mirror this: its sacct command is frozen byte-for-byte (pinned by a
+      unit test).
     * ``exit_code`` is requested and surfaced as the ``ExitCode`` column
       (live-verified 2026-10-09: an ``exit 27`` job reports ``"27"``, a
       bkill'd job ``"2"``, and RUN/DONE/PEND report ``""``). It is kept as
@@ -236,7 +247,7 @@ class LSFBackend(SchedulerBackend):
     BJOBS = '/grid/sfi/farm/bin/bjobs'
     JOB_TABLE_FIELDS = ('jobid job_name stat submit_time start_time '
                         'finish_time run_time runtimelimit nexec_host '
-                        'nthreads command exec_cwd exit_code')
+                        'nthreads command exec_cwd sub_cwd exit_code')
     JOB_TABLE_COLUMNS = ['JobID', 'JobName', 'Start', 'End', 'Elapsed',
                          'State', 'Timelimit', 'NNodes', 'NCPUs',
                          'SubmitLine', 'WorkDir', 'ExitCode']
@@ -272,6 +283,25 @@ class LSFBackend(SchedulerBackend):
 
         df = pd.DataFrame.from_records(records)
 
+        # PEND jobs are INVISIBLE to WorkDir-keyed consumers (e.g. CDM's
+        # scheduler_state / wait_for_hpc_jobs): LSF leaves EXEC_CWD empty
+        # until a job is dispatched to a host, so a queued job's row has no
+        # WorkDir and reads as "absent" -- which the CDM harness then kills
+        # after its 900 s ABSENT_FROM_TABLE_GRACE_S (CI run 37939750883
+        # set 83: two sub-sims presumed lost while they sat ~18 min in PEND
+        # and later completed fine). SUB_CWD is fixed at submission time and
+        # equals the remote dir for aview_hpc submissions (hpc_scripts/
+        # lsf.py runs with cwd = remote dir; live-verified 2026-10-09: RUN
+        # rows report SUB_CWD == EXEC_CWD == remote dir), so it fills the
+        # gap inside the assign below: WorkDir = EXEC_CWD, or SUB_CWD when
+        # EXEC_CWD is empty. Only an ABSOLUTE SUB_CWD is usable: LSF reports
+        # the literal '$HOME' when the submission cwd cannot be represented
+        # (live-observed 2026-10-09), and that must degrade to '' -- the
+        # pre-0.5.4 behavior -- instead of becoming a bogus WorkDir.
+        sub_cwd = (df['SUB_CWD'].fillna('')
+                   if 'SUB_CWD' in df.columns else pd.Series('', index=df.index))
+        sub_cwd = sub_cwd.where(sub_cwd.str.startswith('/'), '')
+
         def to_iso(column: str):
             # LSF prints "Sep 30 20:32:14 2026". Some finish times carry a
             # trailing " L" marker (observed on both running and DONE jobs
@@ -297,7 +327,10 @@ class LSFBackend(SchedulerBackend):
             NNodes=pd.to_numeric(df['NEXEC_HOST'], errors='coerce').fillna(1).astype(int),
             NCPUs=pd.to_numeric(df['NTHREADS'], errors='coerce').fillna(1).astype(int),
             SubmitLine=df['COMMAND'].fillna(''),
-            WorkDir=df['EXEC_CWD'].fillna(''),
+            # See the sub_cwd note above the assign: EXEC_CWD is empty while
+            # a job is PEND, so WorkDir falls back to an absolute SUB_CWD.
+            WorkDir=(df['EXEC_CWD'].fillna('')
+                     .mask(df['EXEC_CWD'].fillna('') == '', sub_cwd)),
             # Kept as a STRING ('27', ''): non-EXIT rows report '', so an
             # integer cast would NaN-ify them, and LSF exit codes are not
             # always plain ints (signal forms exist on other LSF setups).
