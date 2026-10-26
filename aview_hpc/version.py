@@ -1,4 +1,4 @@
-version = '0.5.4'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
+version = '0.5.5'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
 version_notes = ('LSF PEND jobs get a WorkDir from sub_cwd (t_96514c3c / '
                  'CDM card: "HPC: LSF PEND jobs read as \'absent\' (bjobs '
                  'EXEC_CWD empty until dispatch) and get killed after '
