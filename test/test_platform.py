@@ -190,6 +190,20 @@ class TestWindowsDispatch(unittest.TestCase):
         self.assertEqual(killed[0][:4], ['taskkill', '/F', '/T', '/PID'])
 
 
+class TestGetResultsTimeoutPlumbing(unittest.TestCase):
+    def test_get_results_forwards_timeout_to_run_cli(self):
+        from aview_hpc import aview_hpc as api
+        with patch.object(api, 'run_cli', return_value=('', '')) as rc:
+            api.get_results(Path('/r'), Path('/l'), extensions=['.msg'], timeout=42)
+        self.assertEqual(rc.call_args.kwargs['timeout'], 42)
+
+    def test_get_results_timeout_error_propagates(self):
+        from aview_hpc import aview_hpc as api
+        with patch.object(api, 'run_cli', side_effect=TimeoutError('killed')):
+            with self.assertRaises(TimeoutError):
+                api.get_results(Path('/r'), Path('/l'))
+
+
 class TestPosixDispatch(unittest.TestCase):
     """POSIX: in-process CLI call, no subprocess, no STARTUPINFO."""
 
