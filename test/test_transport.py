@@ -491,7 +491,7 @@ class TestSSHPathUnchanged(unittest.TestCase):
         self.ssh = SSHTransport.__new__(SSHTransport)  # no _connect
         self.sent = []
 
-        def fake_exec_command(cmd):
+        def fake_exec_command(cmd, timeout=None):
             self.sent.append(cmd)
 
             class _Stream:
@@ -785,3 +785,48 @@ class TestReviewRound1(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestSSHTransportTimeouts(unittest.TestCase):
+    """Every paramiko call on the get_results path is bounded (a server that
+    vanishes mid-session must raise, not block forever)."""
+
+    def _transport(self):
+        import sys
+        import types
+        from unittest import mock
+        from aview_hpc import transport as tr
+
+        ssh = mock.MagicMock()
+        ftp = ssh.open_sftp.return_value
+        fake_paramiko = types.SimpleNamespace(
+            SSHClient=lambda: ssh, AutoAddPolicy=lambda: object())
+        with mock.patch.dict(sys.modules, {'paramiko': fake_paramiko}),              mock.patch('aview_hpc._cli._keyring_get_password', return_value=None):
+            t = tr.SSHTransport('h', 'u')
+        return tr, t, ssh, ftp
+
+    def test_connect_is_bounded(self):
+        tr, _, ssh, ftp = self._transport()
+        kw = ssh.connect.call_args.kwargs
+        self.assertEqual(kw['timeout'], tr.CONNECT_TIMEOUT_S)
+        self.assertEqual(kw['banner_timeout'], tr.BANNER_TIMEOUT_S)
+        self.assertEqual(kw['auth_timeout'], tr.AUTH_TIMEOUT_S)
+        ssh.get_transport.return_value.set_keepalive.assert_called_once_with(tr.KEEPALIVE_S)
+        ftp.get_channel.return_value.settimeout.assert_called_once_with(tr.IO_TIMEOUT_S)
+
+    def test_exec_calls_are_bounded(self):
+        tr, t, ssh, _ = self._transport()
+        ssh.exec_command.side_effect = lambda *a, **k: (
+            None, mock_stream(b''), mock_stream(b''))
+        t.exec_shell('ls')
+        t.copy_file('a', 'b')
+        t.mkdtemp(None, None)  # empty stdout -> Path('.')
+        for call in ssh.exec_command.call_args_list:
+            self.assertEqual(call.kwargs.get('timeout'), tr.IO_TIMEOUT_S, call)
+
+
+def mock_stream(data):
+    from unittest import mock
+    m = mock.MagicMock()
+    m.read.return_value = data
+    return m

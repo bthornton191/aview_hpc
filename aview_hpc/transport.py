@@ -202,6 +202,19 @@ class Transport:
         raise NotImplementedError
 
 
+CONNECT_TIMEOUT_S = 30
+"""TCP connect timeout (paramiko ``timeout=``)."""
+BANNER_TIMEOUT_S = 30
+AUTH_TIMEOUT_S = 30
+IO_TIMEOUT_S = 120
+"""Per-read/write socket timeout on every exec and SFTP channel. A read
+that makes no progress for this long raises ``socket.timeout`` instead of
+blocking forever (the 2026-10-26 ~20 h ``get_results`` hang: the server
+rebooted mid-session and the client waited on a dead socket)."""
+KEEPALIVE_S = 15
+"""SSH keepalive interval; a dead peer is detected within a few intervals."""
+
+
 class SSHTransport(Transport):
     """The historical behaviour: paramiko SSH + SFTP, unchanged.
 
@@ -239,11 +252,17 @@ class SSHTransport(Transport):
                 connect_kwargs['key_filename'] = self.key_filename
 
         try:
-            ssh.connect(self.host, **connect_kwargs)
+            ssh.connect(self.host, timeout=CONNECT_TIMEOUT_S,
+                        banner_timeout=BANNER_TIMEOUT_S,
+                        auth_timeout=AUTH_TIMEOUT_S, **connect_kwargs)
         except socket.gaierror as err:
             raise socket.gaierror(f'Could not connect to {self.host}. '
                                   'Do you need to be on a VPN?') from err
+        paramiko_transport = ssh.get_transport()
+        if paramiko_transport is not None:
+            paramiko_transport.set_keepalive(KEEPALIVE_S)
         ftp = ssh.open_sftp()
+        ftp.get_channel().settimeout(IO_TIMEOUT_S)
 
         return ssh, ftp
 
@@ -253,7 +272,7 @@ class SSHTransport(Transport):
         return self.exec_shell(' '.join(str(a) for a in argv))
 
     def exec_shell(self, command: str) -> Tuple[str, str]:
-        _, stdout, stderr = self.ssh.exec_command(command)
+        _, stdout, stderr = self.ssh.exec_command(command, timeout=IO_TIMEOUT_S)
         return stdout.read().decode(), stderr.read().decode()
 
     def exec_cleanup(self, backend, remote_dir: Path) -> None:
@@ -266,7 +285,7 @@ class SSHTransport(Transport):
         self.ftp.get(remote_path, str(local_path))
 
     def copy_file(self, src_path: str, dst_path: str) -> None:
-        self.ssh.exec_command(f'cp {src_path} {dst_path}')
+        self.ssh.exec_command(f'cp {src_path} {dst_path}', timeout=IO_TIMEOUT_S)
 
     def listdir(self, remote_dir: str) -> List[str]:
         return self.ftp.listdir(remote_dir)
@@ -281,7 +300,8 @@ class SSHTransport(Transport):
 
         stdout, _ = self.exec_shell(cmd)
         remote_dir = Path(stdout.strip())
-        _, out, err = self.ssh.exec_command(f'chmod 775 {remote_dir.as_posix()}')
+        _, out, err = self.ssh.exec_command(f'chmod 775 {remote_dir.as_posix()}',
+                                              timeout=IO_TIMEOUT_S)
 
         if err.read().decode() != '' or out.read().decode() != '':
             raise RuntimeError(f'Could not set permissions on {remote_dir}.')
