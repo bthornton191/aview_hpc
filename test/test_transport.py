@@ -783,10 +783,6 @@ class TestReviewRound1(unittest.TestCase):
         self.assertIn('*.out', sent[0])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class TestSSHTransportTimeouts(unittest.TestCase):
     """Every paramiko call on the get_results path is bounded (a server that
     vanishes mid-session must raise, not block forever)."""
@@ -830,3 +826,7 @@ def mock_stream(data):
     m = mock.MagicMock()
     m.read.return_value = data
     return m
+
+
+if __name__ == '__main__':
+    unittest.main()
