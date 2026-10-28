@@ -117,7 +117,8 @@ class TestWindowsDispatch(unittest.TestCase):
             def __exit__(self, *exc):
                 return False
 
-            def communicate(self):
+            def communicate(self, timeout=None):
+                captured['timeout'] = timeout
                 return 'stdout-text', 'stderr-text'
 
         with patch.object(platform, 'IS_WINDOWS', True), \
@@ -128,6 +129,79 @@ class TestWindowsDispatch(unittest.TestCase):
         self.assertEqual((out, err), ('stdout-text', 'stderr-text'))
         self.assertEqual(captured['cmd'], [str(fake_bin), 'get_job_table'])
         self.assertFalse(captured['kwargs']['shell'])
+
+
+    def test_run_cli_windows_default_timeout_applied(self):
+        captured = {}
+
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def communicate(self, timeout=None):
+                captured['timeout'] = timeout
+                return '', ''
+
+        with patch.object(platform, 'IS_WINDOWS', True),              patch.object(platform, 'get_binary', return_value=Path('x.exe')),              patch.object(platform.subprocess, 'Popen', FakePopen):
+            run_cli(['get_results'])
+            self.assertEqual(captured['timeout'], platform.CLI_TIMEOUT_S)
+            run_cli(['get_results'], timeout=7)
+            self.assertEqual(captured['timeout'], 7)
+
+    def test_run_cli_windows_hang_is_killed_and_raises_timeout(self):
+        events = []
+
+        class HungPopen:
+            pid = 4242
+
+            def __init__(self, cmd, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def communicate(self, timeout=None):
+                if timeout is not None and not events:
+                    events.append('timeout')
+                    raise platform.subprocess.TimeoutExpired('x', timeout)
+                events.append('reaped')
+                return '', ''
+
+            def kill(self):
+                events.append('kill')
+
+        killed = []
+        with patch.object(platform, 'IS_WINDOWS', True),              patch.object(platform, 'get_binary', return_value=Path('x.exe')),              patch.object(platform.subprocess, 'Popen', HungPopen),              patch.object(platform.subprocess, 'run',
+                          side_effect=lambda cmd, **kw: killed.append(cmd)):
+            with self.assertRaises(TimeoutError) as ctx:
+                run_cli(['get_results', 'a', 'b'], timeout=0.1)
+
+        self.assertIn('get_results', str(ctx.exception))
+        self.assertEqual(events, ['timeout', 'kill', 'reaped'])
+        self.assertEqual(killed[0][:4], ['taskkill', '/F', '/T', '/PID'])
+
+
+class TestGetResultsTimeoutPlumbing(unittest.TestCase):
+    def test_get_results_forwards_timeout_to_run_cli(self):
+        from aview_hpc import aview_hpc as api
+        with patch.object(api, 'run_cli', return_value=('', '')) as rc:
+            api.get_results(Path('/r'), Path('/l'), extensions=['.msg'], timeout=42)
+        self.assertEqual(rc.call_args.kwargs['timeout'], 42)
+
+    def test_get_results_timeout_error_propagates(self):
+        from aview_hpc import aview_hpc as api
+        with patch.object(api, 'run_cli', side_effect=TimeoutError('killed')):
+            with self.assertRaises(TimeoutError):
+                api.get_results(Path('/r'), Path('/l'))
 
 
 class TestPosixDispatch(unittest.TestCase):

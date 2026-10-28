@@ -200,7 +200,27 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     return out_io.getvalue(), err_io.getvalue()
 
 
-def run_cli(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str, str]:
+CLI_TIMEOUT_S = float(os.environ.get('AVIEW_HPC_CLI_TIMEOUT_S', 1800))
+"""Wall-clock cap on one frozen-exe CLI subprocess (Windows). A hung
+transport must not hold the caller (and, in CI, the only runner) for
+hours: on expiry the whole process tree is killed and ``TimeoutError`` is
+raised, which callers treat as a retryable transport fault."""
+
+
+def _kill_tree(proc) -> None:
+    """Kill ``proc`` and its children (the PyInstaller exe spawns one)."""
+    if IS_WINDOWS:
+        try:
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=30, **hidden_popen_kwargs())
+        except Exception:  # noqa: BLE001 - fall back to plain kill
+            pass
+    proc.kill()
+
+
+def run_cli(argv: List[str], cwd: Optional[Path] = None,
+            timeout: Optional[float] = None) -> Tuple[str, str]:
     """Run an aview_hpc CLI command; return ``(stdout, stderr)`` text.
 
     Windows: frozen exe subprocess (argv list, ``shell=False``, console
@@ -217,7 +237,15 @@ def run_cli(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str, str]:
                               stderr=subprocess.PIPE,
                               cwd=None if cwd is None else str(cwd),
                               text=True) as proc:
-            out, err = proc.communicate()
+            limit = CLI_TIMEOUT_S if timeout is None else timeout
+            try:
+                out, err = proc.communicate(timeout=limit)
+            except subprocess.TimeoutExpired:
+                _kill_tree(proc)
+                proc.communicate()
+                raise TimeoutError(
+                    f'aview_hpc {argv[0] if argv else ""} subprocess exceeded '
+                    f'{limit:g}s wall clock and was killed') from None
         return out, err
 
     return _run_cli_inprocess(argv, cwd=cwd)

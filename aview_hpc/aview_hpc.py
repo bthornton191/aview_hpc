@@ -250,7 +250,8 @@ def get_remote_dir_status(remote_dir: Path) -> List[Dict[str, Union[str, int, Pa
     return status
 
 
-def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=None):
+def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=None,
+                timeout=None):
     """Get the results files from the cluster
 
     Parameters
@@ -263,6 +264,9 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
         Local path to place files
     extensions : List[str], optional
         A list of file extensionsto get (including the leading '.'), by default `RES_EXTS`
+    timeout : float, optional
+        Wall-clock cap (s) on the Windows exe subprocess; default `platform.CLI_TIMEOUT_S`.
+        On expiry the process tree is killed and TimeoutError is raised.
 
     Returns
     -------
@@ -279,7 +283,7 @@ def get_results(remote_dir: Path, local_dir: Path, extensions=None, _log_level=N
     if extensions is not None:
         cmd.extend(['--extensions', *extensions])
 
-    out, err = run_cli(cmd)
+    out, err = run_cli(cmd, timeout=timeout)
 
     if _clean_err(err):
         raise RuntimeError(err)
