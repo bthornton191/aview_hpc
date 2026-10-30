@@ -419,6 +419,18 @@ class TestLSFScript(unittest.TestCase):
             res_req=None, n_cpus=8)
         self.assertIn("-R 'span[hosts=1]'", cmd)
 
+    def test_default_res_req_excludes_amd_epyc(self):
+        """Adams FP output differs on AMD EPYC (sjfamd*) vs Intel; the default
+        request must exclude it, keep the OS pin, and stay in ONE -R."""
+        self.assertIn('model!=AMDEPYC764248', lsf_script.DEFAULT_RES_REQ)
+        self.assertIn('OSMJR>=9', lsf_script.DEFAULT_RES_REQ)
+        cmd = lsf_script.build_bsub_command(
+            script_file='myjob_0.lsf', job_name='myjob', mins=60,
+            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            res_req=lsf_script.DEFAULT_RES_REQ, n_cpus=8, mem_mb=1024)
+        self.assertEqual(cmd.count(' -R '), 1)
+        self.assertIn('model!=AMDEPYC764248', cmd)
+
     def test_build_bsub_command_quotes_path_with_spaces(self):
         cmd = lsf_script.build_bsub_command(
             script_file='my job_0.lsf', job_name='myjob', mins=720,
@@ -480,7 +492,7 @@ class TestLSFScript(unittest.TestCase):
         bsub_line = next(l for l in output.splitlines()
                          if l.startswith('DRY-RUN: would run:'))
         self.assertEqual(bsub_line.count(' -R '), 1)
-        self.assertIn(" -R 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9] span[hosts=1]'", bsub_line)
+        self.assertIn(" -R 'select[((OSMJR==8 && OSMNR>=6) || OSMJR>=9) && model!=AMDEPYC764248] span[hosts=1]'", bsub_line)
         self.assertIn('-n 8 ', bsub_line)
         # Job script fed via stdin, as the LAST words of the command (nothing
         # may follow the redirect or bsub treats it as the job COMMAND)
