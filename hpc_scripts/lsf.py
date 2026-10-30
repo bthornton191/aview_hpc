@@ -14,7 +14,8 @@ optional arguments:
                         (required; falls back to $LSF_PROJECT, then the
                         'project' key in ~/.aview_hpc)
   --res_req RES_REQ     LSF resource requirement string (default: pins to
-                        RHEL 8.6+ or RHEL 9 hosts)
+                        RHEL 8.6+ or RHEL 9 hosts, excludes AMD EPYC model
+                        AMDEPYC764248)
   --adams_home DIR      Adams installation directory containing `mdi`
                         (required; falls back to $ADAMS_HOME, then the
                         'adams_home' key in ~/.aview_hpc)
@@ -60,7 +61,13 @@ from pathlib import Path
 
 BSUB = '/grid/sfi/farm/bin/bsub'
 DEFAULT_QUEUE = 'lnx64'
-DEFAULT_RES_REQ = 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'
+# Pins to RHEL 8.6+/9 hosts AND excludes AMD EPYC 7642 hosts (sjfamd*, lshosts -w
+# model AMDEPYC764248): Adams output on AMD differs at FP level from Intel, which
+# made CDM qual set 144a roller-nut axi_k rows flip (t_0535be0c). Intel models
+# agree with each other, so no single Intel model is pinned.
+EXCLUDED_MODEL = 'AMDEPYC764248'
+DEFAULT_RES_REQ = ('select[((OSMJR==8 && OSMNR>=6) || OSMJR>=9) && '
+                   f'model!={EXCLUDED_MODEL}]')
 # Site rule (sjlsf01 bsub wrapper): ^[A-Z]+:[^:]+:[A-Z]+:[^:]+ as a PREFIX, so
 # optional trailing ``:field`` segments are allowed (Cadence IT: "-P
 # <PRODUCT:release:GROUP:purpose[:optional-field]>").
