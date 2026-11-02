@@ -1,7 +1,5 @@
-version = '0.6.0'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
-version_notes = ('Site configuration moved out of code: LSF bsub/bjobs paths, default queue, '
-                 'default resource requirement and farm-visible storage roots are read from '
-                 '~/.aview_hpc keys (bsub, bjobs, queue, res_req, farm_roots) or AVIEW_HPC_* '
-                 'environment variables, with neutral defaults. Committed logs/results removed; '
-                 'denylist check added.')
+version = '0.6.1'  # REDUNDANT: MAKE SURE THIS MATCHES THE VERSION setup.py
+version_notes = ('lsf.py: configurable host-model exclusion (exclude_models list key in '
+                 '~/.aview_hpc, AVIEW_HPC_EXCLUDE_MODELS, --exclude_models), folded into the '
+                 'single -R select[]; default empty.')
 date = 'November, 2nd 2026'

@@ -17,6 +17,10 @@ optional arguments:
   --res_req RES_REQ     LSF resource requirement string (default:
                         $AVIEW_HPC_RES_REQ, then the 'res_req' key in
                         ~/.aview_hpc, then none)
+  --exclude_models M[,M] Host models to exclude (e.g. models whose floating-point
+                        output differs); folded into the select[] of the single
+                        -R as model!=M (default: $AVIEW_HPC_EXCLUDE_MODELS, then
+                        the 'exclude_models' list key in ~/.aview_hpc, then none)
   --adams_home DIR      Adams installation directory containing `mdi`
                         (required; falls back to $ADAMS_HOME, then the
                         'adams_home' key in ~/.aview_hpc)
@@ -87,7 +91,13 @@ def load_config(config_file: Path = None) -> dict:
         return {}
     # Keep only non-empty string values: a mistyped value (number, list) must
     # surface as a clean "is required" parser error, not a TypeError later.
-    return {k: v for k, v in config.items() if isinstance(v, str) and v.strip()}
+    # ``exclude_models`` is the one list-valued key; it is kept when it is a
+    # list of non-empty strings.
+    clean = {k: v for k, v in config.items() if isinstance(v, str) and v.strip()}
+    models = config.get('exclude_models')
+    if isinstance(models, list) and all(isinstance(m, str) for m in models):
+        clean['exclude_models'] = [m.strip() for m in models if m.strip()]
+    return clean
 
 
 
@@ -96,6 +106,55 @@ def site_setting(key: str, env_var: str, default: str, config: dict = None) -> s
     if config is None:
         config = load_config()
     return os.environ.get(env_var) or config.get(key) or default
+
+
+RE_HOST_MODEL = re.compile(r'[A-Za-z0-9_.+-]+')
+
+
+def parse_exclude_models(value) -> list:
+    """Normalise an exclude_models value (list, or comma/space separated str)
+    to a de-duplicated list of host-model names. Empty/None -> []."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        value = re.split(r'[,\s]+', value)
+    models = []
+    for m in value:
+        m = str(m).strip()
+        if not m or m in models:
+            continue
+        if not RE_HOST_MODEL.fullmatch(m):
+            raise ValueError(f'invalid host model name {m!r}')
+        models.append(m)
+    return models
+
+
+def apply_exclude_models(res_req: str, models) -> str:
+    """Fold ``model!=<M>`` terms into the select[] section of ``res_req``.
+
+    Hosts whose floating-point output differs can be excluded this way. The
+    result is still ONE resource-requirement string (a single -R). An existing
+    select[...] is AND-ed with the exclusions; otherwise one is prepended.
+    No models -> ``res_req`` unchanged.
+    """
+    models = parse_exclude_models(models)
+    res_req = str(res_req or '').strip()
+    if not models:
+        return res_req
+    clause = ' && '.join(f'model!={m}' for m in models)
+    start = res_req.find('select[')
+    if start < 0:
+        return ' '.join(p for p in (f'select[{clause}]', res_req) if p)
+    open_ = start + len('select[')
+    depth, i = 1, open_
+    while i < len(res_req) and depth:
+        depth += {'[': 1, ']': -1}.get(res_req[i], 0)
+        i += 1
+    if depth:
+        raise ValueError(f'unbalanced select[ in res_req {res_req!r}')
+    inner = res_req[open_:i - 1].strip()
+    new_inner = f'({inner}) && {clause}' if inner else clause
+    return f'{res_req[:open_]}{new_inner}]{res_req[i:]}'
 
 
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
@@ -322,6 +381,12 @@ def main():
                         help='LSF resource requirement string (default: '
                              '$AVIEW_HPC_RES_REQ, then the res_req key in ~/.aview_hpc, '
                              'then none)')
+    parser.add_argument('--exclude_models', type=str,
+                        default=os.environ.get('AVIEW_HPC_EXCLUDE_MODELS')
+                        or config.get('exclude_models') or '',
+                        help='Comma-separated host models to exclude (default: '
+                             '$AVIEW_HPC_EXCLUDE_MODELS, then the exclude_models '
+                             'list in ~/.aview_hpc, then none)')
     parser.add_argument('--adams_home', type=str,
                         default=os.environ.get('ADAMS_HOME') or config.get('adams_home'),
                         help='Adams installation directory containing mdi (required)')
@@ -353,6 +418,11 @@ def main():
     if not args.license_file:
         parser.error("--license is required (or set $MSC_LICENSE_FILE, or a 'license' "
                      'key in ~/.aview_hpc)')
+
+    try:
+        args.res_req = apply_exclude_models(args.res_req, args.exclude_models)
+    except ValueError as e:
+        parser.error(str(e))
 
     acf_file = Path(args.acf_file).absolute()
     mins = args.mins
