@@ -2,7 +2,7 @@
 
 These tests are pure unit tests: they run against captured fixture text
 (no live cluster needed). The fixture `bjobs_sample.json` contains records
-captured verbatim from the Cadence farm farm on 2026-10-01 (LSF
+captured verbatim from an LSF farm on 2026-10-01 (LSF
 10.1.0.15) plus synthetic records for states not present in the capture.
 """
 import importlib.util
@@ -127,9 +127,25 @@ class TestLSFBackend(unittest.TestCase):
         self.assertIsNone(self.backend.re_submission_response.search(
             'Job not submitted: invalid project\n'))
 
-    def test_job_table_command(self):
-        cmd = self.backend.job_table_command(days=7)
+    def test_job_table_command_site_bjobs_from_env_and_config(self):
+        with patch.dict(os.environ, {'AVIEW_HPC_BJOBS': '/opt/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.startswith('env LC_ALL=C /opt/lsf/bin/bjobs -a -o "'))
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
+        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config',
+                      return_value={'bjobs': '/srv/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
+        self.assertTrue(cmd.startswith('env LC_ALL=C /srv/lsf/bin/bjobs -a '))
+
+    def test_job_table_command_default_bjobs_on_path(self):
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
+        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config', return_value={}):
+            cmd = self.backend.job_table_command(days=7)
+        self.assertTrue(cmd.startswith('env LC_ALL=C bjobs -a -o "'))
+
+    def test_job_table_command(self):
+        with patch.dict(os.environ, {'AVIEW_HPC_BJOBS': '/opt/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.endswith('" -json'))
         self.assertIn('exec_cwd', cmd)
         self.assertIn('sub_cwd', cmd)
@@ -194,7 +210,7 @@ class TestLSFBackend(unittest.TestCase):
         failed_state = df[df['JobID'] == 5800003].iloc[0]['State']
         self.assertEqual(failed_state.lower(), 'failed')  # consumer contract
 
-        # exit_code column (live-verified shapes on farm 2026-10-09:
+        # exit_code column (live-verified shapes on a farm 2026-10-09:
         # 'exit 27' job -> "27"; RUN/DONE/PEND -> ""; the fixture's second
         # DONE record carries "0" -- a DONE job that reports 0 must parse).
         # Kept as str: an int cast would NaN-ify every non-EXIT row.
@@ -208,10 +224,10 @@ class TestLSFBackend(unittest.TestCase):
         pending = df[df['JobID'] == 5800001].iloc[0]
         self.assertTrue(pd.isna(pending['Start']))
         self.assertEqual(pending['Elapsed'], '00:00:00')
-        # PEND jobs get a WorkDir from SUB_CWD (task): LSF leaves
+        # PEND jobs get a WorkDir from SUB_CWD: LSF leaves
         # EXEC_CWD empty until dispatch, so a queued aview_hpc job
         # (lsf.py runs with cwd = remote dir) is only findable via SUB_CWD.
-        # This is the set-83 regression shape (run 37939750883: two sub-sims
+        # This is the regression shape (two sub-sims
         # read as "absent" for 900 s and killed while PEND).
         self.assertEqual(pending['State'], 'PENDING')
         self.assertEqual(pending['WorkDir'], '/home/user/hpc_tmp/x.abcd')
@@ -374,7 +390,8 @@ class TestLSFScript(unittest.TestCase):
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
             queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
-            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8)
+            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8,
+            bsub='/opt/lsf/bin/bsub')
 
         self.assertIn(' -W 12:00 ', cmd)
         self.assertIn(' -P EXAMPLE:1.0:GRP:PURPOSE ', cmd)
@@ -465,7 +482,10 @@ class TestLSFScript(unittest.TestCase):
                     '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
                     '--adams_home', '/home/user/adams/2023_4_1',
                     '--license', '1700@license.example.com', '--dry_run']
-            with patch.object(sys, 'argv', argv), patch('sys.stdout', new=StringIO()) as out:
+            site_env = {'AVIEW_HPC_BSUB': '/opt/lsf/bin/bsub',
+                        'AVIEW_HPC_QUEUE': 'lnx64',
+                        'AVIEW_HPC_RES_REQ': 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'}
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, site_env),                     patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
             output = out.getvalue()
 
@@ -489,6 +509,32 @@ class TestLSFScript(unittest.TestCase):
         self.assertIn('/home/user/adams/2023_4_1/mdi -c ru-s i m.acf exit', output)
         self.assertNotIn('Job <', output)
 
+    def test_dry_run_neutral_defaults_and_config_keys(self):
+        """No site values in code: defaults are neutral; ``bsub``/``queue``/
+        ``res_req`` keys in ~/.aview_hpc supply the site values."""
+        argv_tail = ['--mins', '5', '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+                     '--adams_home', '/home/user/adams', '--license',
+                     '1700@license.example.com', '--dry_run']
+        clean = {k: v for k, v in os.environ.items() if not k.startswith('AVIEW_HPC_')}
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            argv = ['lsf.py', str(acf)] + argv_tail
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value={}),                     patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+            line = next(l for l in out.getvalue().splitlines()
+                        if l.startswith('DRY-RUN: would run:'))
+            self.assertIn('would run: bsub -q normal ', line)
+            self.assertIn(" -R 'span[hosts=1]' ", line)
+
+            cfg = {'bsub': '/opt/lsf/bin/bsub', 'queue': 'short',
+                   'res_req': 'select[type==any]'}
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value=cfg),                     patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+            line = next(l for l in out.getvalue().splitlines()
+                        if l.startswith('DRY-RUN: would run:'))
+            self.assertIn('would run: /opt/lsf/bin/bsub -q short ', line)
+            self.assertIn("-R 'select[type==any] span[hosts=1]'", line)
+
     def test_submit_rejects_forwarded_extras(self):
         """Unknown/extra args forwarded after the options would become the
         bsub job COMMAND line (overriding the stdin-fed job script, exit 127):
@@ -508,7 +554,7 @@ class TestLSFScript(unittest.TestCase):
         # to the REAL ~/.aview_hpc on the running machine, and on the LSF
         # submit host that file carries a project key -- main() then runs a
         # REAL bsub instead of exiting (observed on submit-host
-        # 2026-10-08: jobs 566843/566932/567142 EXITed from this test).
+        # 2026-10-08: several jobs EXITed from this test).
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--adams_home', '/a', '--license', '1700@x']
@@ -541,19 +587,19 @@ class TestLSFScript(unittest.TestCase):
         return out.getvalue()
 
     def test_project_with_optional_fields_accepted(self):
-        """Cadence IT format allows trailing :optional-field segments."""
+        """site IT format allows trailing :optional-field segments."""
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
-            out = self._main_env(['lsf.py', str(acf), '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+            out = self._main_env(['lsf.py', str(acf), '--project', 'EXAMPLE:1.0:GRP:PURPOSE:extra',
                                   '--adams_home', '/a', '--license', '1700@x', '--dry_run'],
                                  tmpdir=tmpdir)
-        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE', out)
+        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE:extra', out)
 
     def test_project_regex_rejects_bad_shapes(self):
         for bad in ('adams:2023.4.1:AE:qual', 'ADAMS:2023.4.1:ae:qual', 'ADAMS:2023.4.1:AE',
                     'ADAMS::AE:qual', 'EXAMPLE:1.0:GRP:PURPOSE:', 'no-colons'):
             self.assertIsNone(lsf_script.RE_PROJECT.fullmatch(bad), bad)
-        for good in ('EXAMPLE:1.0:GRP:PURPOSE', 'EXAMPLE:1.0:GRP:PURPOSE', 'EDI:23.1:RD:build:x:y'):
+        for good in ('EXAMPLE:1.0:GRP:PURPOSE', 'EXAMPLE:1.0:GRP:PURPOSE:extra', 'EDI:23.1:RD:build:x:y'):
             self.assertIsNotNone(lsf_script.RE_PROJECT.fullmatch(good), good)
 
     def test_config_file_supplies_project_adams_home_license(self):
@@ -562,10 +608,10 @@ class TestLSFScript(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             out = self._main_env(['lsf.py', str(acf), '--dry_run'], tmpdir=tmpdir,
-                                 config={'project': 'EXAMPLE:1.0:GRP:PURPOSE',
+                                 config={'project': 'EXAMPLE:1.0:GRP:PURPOSE:extra',
                                          'adams_home': '/home/u/adams/2023_4_1',
                                          'license': '1700@license.example.com'})
-        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE', out)
+        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE:extra', out)
         self.assertIn('/home/u/adams/2023_4_1/mdi -c ru-s i m.acf exit', out)
         self.assertIn('MSC_LICENSE_FILE=1700@license.example.com', out)
 
@@ -617,9 +663,9 @@ class TestSubmitKwargTranslation(unittest.TestCase):
     """Scheduler backends translate generic submit kwargs (mem/nice/...) into
     the submit script's own vocabulary BEFORE they become --options.
 
-    Background: the consumer qual harness passes mem=JOB_MEM_GB ('32G') and
+    Background: a client harness passes mem=JOB_MEM_GB ('32G') and
     nice=MAX_NICE (2147483645) -- sbatch-era options from the retired Slurm
-    Slurm cluster. hpc_scripts/lsf.py correctly refuses unknown options
+    cluster. hpc_scripts/lsf.py correctly refuses unknown options
     (trailing words become the bsub job COMMAND line), which killed the
     first farm-backed Linux CI run (37824964058, 2026-10-08). The fix is
     HERE, in the scheduler backend, so every caller stays scheduler-agnostic
@@ -627,7 +673,7 @@ class TestSubmitKwargTranslation(unittest.TestCase):
     purely via ~/.aview_hpc.
     """
 
-    # The exact kwargs the consumer qual harness sends (hpc_jobs.py run_on_hpc /
+    # The exact kwargs a client harness sends (hpc_jobs.py run_on_hpc /
     # base_test.py submit block): L184-185 mem=JOB_MEM_GB, nice=MAX_NICE.
     CDM_KWARGS = {'mins': 1000, 'mem': '32G', 'nice': 2147483645}
 
@@ -714,7 +760,7 @@ class TestSubmitKwargTranslation(unittest.TestCase):
 
     def test_base_backend_identity(self):
         """The base class default is identity (backends without translation
-        needs inherit it; the Slurm slurm script's frozen behavior is the
+        needs inherit it; the slurm script's frozen behavior is the
         precedent)."""
         from aview_hpc.schedulers import SchedulerBackend
         kwargs = {'mem': '32G', 'nice': 1}
@@ -987,7 +1033,7 @@ class TestSessionAppliesTranslation(unittest.TestCase):
 
 
 class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
-    """task acceptance: a ``submit_multi`` ROUND TRIP where chatter
+    """a ``submit_multi`` ROUND TRIP where chatter
     reaches stdout at BOTH layers still returns the parsed JSON.
 
     The full client stack is exercised, in-process, with no cluster:
@@ -1000,7 +1046,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
     ITS stdout before the LSF submission line.
 
     On top of that, the HOST root logger carries a print-based handler
-    (consumer's AdamsLogFileHandler shape) -- the exact CI run 37923731507
+    (a consumer's AdamsLogFileHandler shape) -- the exact CI failure
     configuration that made ``json.loads(out)`` die at char 0 after LSF
     1337242 was already submitted.
     """
@@ -1017,7 +1063,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         script.write_text(
             '#!{python}\n'
             'import sys\n'
-            'print("Running: bsub -q lnx64 -P EXAMPLE:1.0:GRP:PURPOSE ...")\n'
+            'print("Running: bsub -q lnx64 -P EXAMPLE:1.0:GRP:PURPOSE:extra ...")\n'
             'print("Job <4242> is submitted to queue lnx64")\n'
             .format(python=sys.executable))
         return script
@@ -1038,7 +1084,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         saved_level = root_logger.level
         ph = self._PrintRootHandler()
         try:
-            # Host state exactly as the consumer plugin leaves it inside Adams
+            # Host state exactly as the a client plugin leaves it inside Adams
             # View: a print-based root handler at INFO.
             for h in saved_handlers:
                 root_logger.removeHandler(h)
@@ -1101,7 +1147,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         noisy2 = ('{"log": "not the payload"}\n'
                   '{"remote_dirs": ["/r/d2"], "job_names": ["j2"], "job_ids": [8]}\n')
         self.assertEqual(_parse_cli_json(noisy2, 'submit_multi')['job_ids'], [8])
-        # Nothing parseable: RuntimeError (which the consumer harness retries),
+        # Nothing parseable: RuntimeError (which the client harness retries),
         # carrying the captured stdout for diagnosis.
         with self.assertRaises(RuntimeError) as ctx:
             _parse_cli_json('no json here at all\n', 'submit_multi')
@@ -1110,14 +1156,14 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
 
 
 class TestGetJobTableRoundTrip(unittest.TestCase):
-    """task: the ExitCode column must survive the client wrapper's
-    CSV round trip as a clean string, the way consumer's scheduler_state reads
+    """the ExitCode column must survive the client wrapper's
+    CSV round trip as a clean string, the way a consumer's scheduler_state reads
     it (str(value) + blank guard -> note ' (exit code 27)').
 
     The CLI prints the DataFrame with ``df.to_csv(index=False)`` and the
     client wrapper re-parses with ``pd.read_csv``.  A column mixing '27'
     and '' would re-parse as float64 (27.0 / NaN) WITHOUT the dtype pin in
-    ``aview_hpc.aview_hpc.get_job_table`` -- making consumer's note read
+    ``aview_hpc.aview_hpc.get_job_table`` -- making a consumer's note read
     '(exit code 27.0)'.  These tests pin the pin.
     """
 
@@ -1135,7 +1181,7 @@ class TestGetJobTableRoundTrip(unittest.TestCase):
         self.assertEqual(failed['ExitCode'], '27')
         # String dtype (pandas 2 'object', pandas 3 'str') -- never float64.
         self.assertIn(str(df['ExitCode'].dtype), ('object', 'str'))
-        # consumer's exact consumption path: str() + blank guard -> note.
+        # the exact consumption path of a consumer: str() + blank guard -> note.
         exit_code = failed['ExitCode']
         note_src = '' if pd.isna(exit_code) else str(exit_code).strip()
         self.assertEqual(note_src, '27')

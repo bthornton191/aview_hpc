@@ -1,6 +1,6 @@
 """Platform-dispatch unit tests (no cluster required).
 
-Covers the Linux-client fix (task):
+Covers the Linux-client fix:
 
 * on Windows, ``run_cli`` invokes the frozen exe (``get_binary()``) as an
   argv list with ``shell=False`` and hidden-window kwargs;
@@ -233,7 +233,7 @@ class TestPosixDispatch(unittest.TestCase):
     # Error contract (review round 1): the POSIX in-process path must
     # fail EXACTLY like the frozen exe subprocess -- a traceback written
     # to the captured stderr, which the aview_hpc.aview_hpc wrapper turns
-    # into RuntimeError. consumer hpc_jobs.py:188 and base_test.py:982 catch
+    # into RuntimeError. consumer code catches
     # only RuntimeError, so raw paramiko.SSHException / socket.gaierror /
     # SystemExit escaping run_cli would abort sets on any transient blip.
     # ------------------------------------------------------------------
@@ -252,7 +252,7 @@ class TestPosixDispatch(unittest.TestCase):
 
     def test_run_cli_posix_ssh_exception_becomes_stderr_traceback(self):
         # paramiko.SSHException escaping _cli.main (SSH banner / connect
-        # failure) -- reproduced live by the reviewer on the round-1 head.
+        # failure) -- reproduced live.
         import paramiko
 
         def ssh_fail_main():
@@ -418,12 +418,12 @@ class TestPosixDispatch(unittest.TestCase):
 
 class PrintBasedRootHandler(logging.Handler):
     """A root-logger handler whose emit() writes via print(), exactly like
-    the consumer plugin's AdamsLogFileHandler inside Adams View (general/log.py:
+    the a client plugin's AdamsLogFileHandler inside Adams View (general/log.py:
     ``emit`` is ``with message_window_quiet(): print(msg)``).
 
     It has NO ``stream`` attribute, so the 0.5.1 stream-swap could not
     re-point it: under ``redirect_stdout`` its records landed in the JSON
-    capture buffer ahead of the payload (task, CI run 37923731507:
+    capture buffer ahead of the payload (a CI run:
     LSF 1337242 DONE, then json.loads(out) died at char 0).
     """
 
@@ -434,7 +434,7 @@ class PrintBasedRootHandler(logging.Handler):
 class TestHermeticInprocessCapture(unittest.TestCase):
     """The in-process CLI stdout must contain ONLY the CLI's payload,
     no matter what logging handlers the HOST process installed on the
-    root logger (task)."""
+    root logger."""
 
     def _run_with_host_handlers(self, handlers, main):
         import logging as _logging
@@ -477,7 +477,7 @@ class TestHermeticInprocessCapture(unittest.TestCase):
 
     def test_print_based_root_handler_cannot_pollute_stdout(self):
         # The CI-37923731507 reproduction: a print-based root handler
-        # (consumer's AdamsLogFileHandler) emitting INFO records under
+        # (a consumer's AdamsLogFileHandler) emitting INFO records under
         # redirect_stdout. Pre-fix this prepended log lines to the JSON
         # and json.loads died at char 0; stdout must now be ONLY the JSON.
         import json
@@ -621,7 +621,7 @@ class TestKeyringGuard(unittest.TestCase):
 
     def test_cli_module_importable_without_keyring_paramiko(self):
         # The deferred imports mean _cli imports cleanly on an interpreter
-        # that lacks keyring/paramiko entirely (the consumer deps-target case
+        # that lacks keyring/paramiko entirely (a vendored-deps case
         # before those were installed).
         import importlib
         import sys as _sys

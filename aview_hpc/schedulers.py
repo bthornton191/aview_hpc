@@ -17,7 +17,9 @@ import glob
 import json
 import logging
 import math
+import os
 import re
+import shlex
 from io import StringIO
 from pathlib import Path
 from typing import List, Optional
@@ -25,6 +27,15 @@ from typing import List, Optional
 import pandas as pd
 
 LOG = logging.getLogger(__name__)
+
+
+def _site_config() -> dict:
+    """``~/.aview_hpc`` contents, or {} when unreadable / keyring is absent."""
+    try:
+        from .config import get_config
+        return get_config()
+    except Exception:  # noqa: BLE001 - config is optional here
+        return {}
 
 
 class SchedulerBackend:
@@ -69,7 +80,7 @@ class SchedulerBackend:
     def translate_submit_kwargs(self, kwargs: dict, logger=None) -> dict:
         """Translate generic submit kwargs into this scheduler's vocabulary.
 
-        Callers (e.g. the consumer qual harness) pass scheduler-AGNOSTIC options
+        Callers (e.g. a client harness) pass scheduler-AGNOSTIC options
         to ``submit``/``submit_multi``/``resubmit_job``: ``mem`` (a memory
         request, Slurm syntax e.g. ``'32G'``), ``nice`` (a scheduling
         priority), ``mins`` (a wall-clock limit). Those kwargs are forwarded
@@ -88,14 +99,14 @@ class SchedulerBackend:
 
 
 class SlurmBackend(SchedulerBackend):
-    """The historical aview_hpc behavior (Hexagon/Romax Slurm cluster)."""
+    """The historical aview_hpc behavior (a Slurm cluster)."""
 
     name = 'slurm'
     re_submission_response = re.compile(r'.*submitted batch job (\d+)\w*', flags=re.I)
     running_states = ['RUNNING']
 
     def translate_submit_kwargs(self, kwargs: dict, logger=None) -> dict:
-        """Identity: the Slurm sbatch-era submit script took ``--mem`` and
+        """Identity: the sbatch-era submit script took ``--mem`` and
         ``--nice`` verbatim, and its behavior is frozen. Byte-identical
         passthrough for every kwarg, known or unknown."""
         return kwargs
@@ -188,7 +199,7 @@ RE_LSF_TIME = re.compile(r'([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})
 
 
 class LSFBackend(SchedulerBackend):
-    """Backend for IBM Spectrum LSF, verified against the Cadence ``farm``
+    """Backend for IBM Spectrum LSF, verified against the site ``the farm``
     farm (LSF 10.1.0.15) on 2026-10-01.
 
     Notes on the job table:
@@ -202,7 +213,7 @@ class LSFBackend(SchedulerBackend):
       argument is accepted for API compatibility with the slurm backend but
       cannot extend that window; history older than the clean period
       requires ``bhist -a -l`` and is NOT included. Consumers that treat
-      "absent from the table" as a signal (e.g. consumer's
+      "absent from the table" as a signal (e.g. a consumer's
       ``job_absent_from_table`` grace logic) must account for this.
     * ``-json`` is used because ``bjobs -o "... delimiter=','"`` is rejected
       by this LSF version ("The delimiter in the format string is
@@ -230,7 +241,7 @@ class LSFBackend(SchedulerBackend):
     * ``exit_code`` is requested and surfaced as the ``ExitCode`` column
       (live-verified 2026-10-09: an ``exit 27`` job reports ``"27"``, a
       bkill'd job ``"2"``, and RUN/DONE/PEND report ``""``). It is kept as
-      a string -- consumers (consumer ``scheduler_state``) render it as a note
+      a string -- consumers (e.g. a state-reporting helper) render it as a note
       (``' (exit code 27)'``) beside the mapped state, never as a decision
       input. ``term_reason`` is NOT a valid field name on this LSF 10.1.
       The slurm backend deliberately does not mirror this: its sacct
@@ -244,7 +255,9 @@ class LSFBackend(SchedulerBackend):
     """
 
     name = 'lsf'
-    BJOBS = '/opt/lsf/bin/bjobs'
+    BJOBS = 'bjobs'
+    """Default bjobs executable; override with $AVIEW_HPC_BJOBS or the ``bjobs``
+    key in ``~/.aview_hpc`` (e.g. /opt/lsf/bin/bjobs)."""
     JOB_TABLE_FIELDS = ('jobid job_name stat submit_time start_time '
                         'finish_time run_time runtimelimit nexec_host '
                         'nthreads command exec_cwd sub_cwd exit_code')
@@ -269,7 +282,9 @@ class LSFBackend(SchedulerBackend):
             LOG.warning('The lsf backend cannot limit the job table to %s days: '
                         'bjobs -a only reports jobs within the cluster CLEAN_PERIOD. '
                         'The `days` argument is ignored.', days)
-        return f'env LC_ALL=C {self.BJOBS} -a -o "{self.JOB_TABLE_FIELDS}" -json'
+        bjobs = (os.environ.get('AVIEW_HPC_BJOBS')
+                 or _site_config().get('bjobs') or self.BJOBS)
+        return f'env LC_ALL=C {shlex.quote(str(bjobs))} -a -o "{self.JOB_TABLE_FIELDS}" -json'
 
     def parse_job_table(self, text: str) -> pd.DataFrame:
         try:
@@ -283,11 +298,11 @@ class LSFBackend(SchedulerBackend):
 
         df = pd.DataFrame.from_records(records)
 
-        # PEND jobs are INVISIBLE to WorkDir-keyed consumers (e.g. consumer's
+        # PEND jobs are INVISIBLE to WorkDir-keyed consumers (e.g. a consumer's
         # scheduler_state / wait_for_hpc_jobs): LSF leaves EXEC_CWD empty
         # until a job is dispatched to a host, so a queued job's row has no
-        # WorkDir and reads as "absent" -- which the consumer harness then kills
-        # after its 900 s ABSENT_FROM_TABLE_GRACE_S (CI run 37939750883
+        # WorkDir and reads as "absent" -- which the client harness then kills
+        # after its 900 s ABSENT_FROM_TABLE_GRACE_S (a CI failure
         # set 83: two sub-sims presumed lost while they sat ~18 min in PEND
         # and later completed fine). SUB_CWD is fixed at submission time and
         # equals the remote dir for aview_hpc submissions (hpc_scripts/
@@ -334,7 +349,7 @@ class LSFBackend(SchedulerBackend):
             # Kept as a STRING ('27', ''): non-EXIT rows report '', so an
             # integer cast would NaN-ify them, and LSF exit codes are not
             # always plain ints (signal forms exist on other LSF setups).
-            # Consumers read it via str() and blank-guard (consumer
+            # Consumers read it via str() and blank-guard (a consumer
             # scheduler_state); the client wrapper pins the dtype through
             # its CSV round-trip (see aview_hpc.aview_hpc.get_job_table).
             ExitCode=df['EXIT_CODE'].fillna(''),
@@ -374,11 +389,11 @@ class LSFBackend(SchedulerBackend):
         (deliberately: a genuinely unsupported option must die loudly, not
         be silently swallowed here).
 
-        Background: the consumer qual harness has always passed
+        Background: a client harness has always passed
         ``mem=JOB_MEM_GB, nice=MAX_NICE`` -- sbatch-era options from the
         retired Slurm cluster. Under slurm they were forwarded verbatim;
         under lsf they were rejected ("Unsupported arguments forwarded to
-        bsub", CI run 37824964058 2026-10-08). Translating HERE keeps the
+        bsub", 2026-10-08). Translating HERE keeps the
         client scheduler-configurable: the same generic kwargs work on
         Windows+Slurm, Windows+LSF and Linux+LSF purely via ~/.aview_hpc,
         with no scheduler-specific values in any caller.

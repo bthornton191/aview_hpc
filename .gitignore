@@ -12,3 +12,5 @@ dist
 **/aview.log
 docker
 .venv
+
+/test/results/

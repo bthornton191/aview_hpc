@@ -1,7 +1,7 @@
 """Transport layer for aview_hpc: SSH (historical) vs local (no SSH).
 
-Why (task): on the Linux qual VM ``submit-host`` the submitter IS
-the farm LSF submit host, so ``HPCSession``'s paramiko SSH+SFTP connection
+Why: on a Linux submit host the submitter IS
+the the farm LSF submit host, so ``HPCSession``'s paramiko SSH+SFTP connection
 is a self-SSH -- pointless overhead that also depends on a self-key.
 Windows submitters still need SSH (Adams View on Windows blocks paramiko
 in-process, so the client runs as the frozen exe there and the CLI always
@@ -32,7 +32,7 @@ system temp dir) or that does not exist, and it runs on the root the
 session actually uses -- an explicit ``remote_tempdir=`` argument
 included, not just the config value; the error names the offending value
 and the fix.  The farm-layout check is only enforced where the layout is
-actually known (the Cadence layout, ``/shared/<user>shared_dir``); on any other
+actually configured (``farm_roots``); on any other
 host the root must simply exist and not be a system temp dir.
 """
 
@@ -54,15 +54,33 @@ LOG = logging.getLogger(__name__)
 TRANSPORT_KEY = 'transport'
 """``~/.aview_hpc`` key: 'local' or 'ssh' (missing -> auto-detect)."""
 
-FARM_VISIBLE_ROOTS = ('/shared/',)
-"""Roots that ARE farm-visible storage on the farm submit host layout.
+FARM_VISIBLE_ROOTS = ()
+"""Built-in farm-visible storage roots (none: site layouts come from config).
 
-Only consulted when the configured remote root is NOT under one of these:
-a root under /vols is accepted as-is (any /shared/<x> path is farm storage),
-while a root that is a system temp directory is always refused.  The
-refusal is the point: job dirs on local-only storage (``/tmp``) are
+Configure site roots with the ``farm_roots`` key in ``~/.aview_hpc`` (a list,
+or a string separated by ``os.pathsep``) or ``$AVIEW_HPC_FARM_ROOTS``, e.g.
+``/shared/``.  A configured remote root under one of them is accepted as-is
+(once it exists); a root that is a system temp directory is always refused.
+The refusal is the point: job dirs on local-only storage (``/tmp``) are
 invisible to the LSF execution hosts, so the job would run nowhere.
 """
+
+
+def _farm_roots() -> Tuple[str, ...]:
+    """Farm-visible roots: built-ins + $AVIEW_HPC_FARM_ROOTS + config key."""
+    roots = list(FARM_VISIBLE_ROOTS)
+    extra = [os.environ.get('AVIEW_HPC_FARM_ROOTS')]
+    try:
+        extra.append(get_config().get('farm_roots'))
+    except Exception:  # noqa: BLE001 - unreadable config -> no extra roots
+        pass
+    for value in extra:
+        if isinstance(value, str):
+            value = [v for v in value.split(os.pathsep) if v.strip()]
+        if isinstance(value, (list, tuple)):
+            roots.extend(str(v) for v in value if str(v).strip())
+    return tuple(roots)
+
 
 SYSTEM_TEMP_ROOTS = ('/tmp', '/var/tmp', '/dev/shm')
 """Local-only locations a local-mode remote root must never be (or be under)."""
@@ -349,7 +367,7 @@ class LocalTransport(Transport):
                 'local transport requires a farm-visible remote root for '
                 'job directories: set remote_tempdir in ~/.aview_hpc (or '
                 'pass remote_tempdir= to HPCSession) to a directory the '
-                'LSF execution hosts can see (e.g. /shared/<user>shared_dir). '
+                'LSF execution hosts can see (e.g. /shared/<user>). '
                 'Refusing to fall back to the system temp dir (/tmp), '
                 'where job dirs would be invisible to the farm.')
         self.remote_root = Path(remote_root)
@@ -379,10 +397,10 @@ class LocalTransport(Transport):
             raise RuntimeError(
                 f'remote_tempdir {posix} is not farm-visible storage; '
                 'local-mode job directories must live on storage the LSF '
-                'execution hosts can see (e.g. /shared/<user>shared_dir), never '
+                'execution hosts can see (e.g. /shared/<user>), never '
                 f'a system temp dir ({", ".join(SYSTEM_TEMP_ROOTS)}). '
                 'Set remote_tempdir in ~/.aview_hpc to a farm-visible path.')
-        if any(posix.startswith(froot) for froot in FARM_VISIBLE_ROOTS):
+        if any(posix.startswith(froot) for froot in _farm_roots()):
             # Under a known farm-visible root: trust the layout.
             if not Path(root).is_dir():
                 raise RuntimeError(
@@ -412,7 +430,7 @@ class LocalTransport(Transport):
         only when parsing fails; a scheduler that exits nonzero has failed
         even when it prints nothing useful).  A command that cannot run at
         all (not on PATH, not executable) also raises RuntimeError rather
-        than a raw OSError -- consumer's retry handlers catch only RuntimeError.
+        than a raw OSError -- a consumer's retry handlers catch only RuntimeError.
         """
         argv = [str(a) for a in argv]
         if any(ch in argv[0] for ch in ' \t\n'):

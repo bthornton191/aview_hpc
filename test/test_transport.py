@@ -1,4 +1,4 @@
-"""Transport unit tests (task): no cluster, no SSH, no paramiko import.
+"""Transport unit tests: no cluster, no SSH, no paramiko import.
 
 Covers the card's deliverable 6:
 
@@ -370,6 +370,14 @@ class TestLocalStorageGuard(unittest.TestCase):
                 LocalTransport(remote_root=Path(bad))
             self.assertIn('farm-visible', str(ctx.exception))
 
+    def test_farm_roots_from_env_and_config(self):
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_FARM_ROOTS'}
+        with patch.dict(os.environ, env, clear=True),                 patch.object(transport_module, 'get_config', return_value={}):
+            self.assertEqual(transport_module._farm_roots(), ())
+        with patch.dict(os.environ, {'AVIEW_HPC_FARM_ROOTS': '/shared/'}),                 patch.object(transport_module, 'get_config',
+                             return_value={'farm_roots': ['/srv/farm/']}):
+            self.assertEqual(transport_module._farm_roots(), ('/shared/', '/srv/farm/'))
+
     def test_nonexistent_root_refused(self):
         with self.assertRaises(RuntimeError) as ctx:
             LocalTransport(remote_root=Path('/shared/user/no_such_dir'))
@@ -556,7 +564,7 @@ class TestSSHPathUnchanged(unittest.TestCase):
 
 
 class TestReviewRound1(unittest.TestCase):
-    """EXAMPLE-reviewer round-1 findings on PR #4 (2026-10-08), all fixed.
+    """Review round-1 findings, all fixed.
 
     Item 1: the SSH path dropped the session's explicit username (it used
     config['username'] only); HPCSession(host, username='explicit_user')
@@ -656,7 +664,7 @@ class TestReviewRound1(unittest.TestCase):
         from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
         fake_cfg = {'transport': 'local', 'host': 'submit-host',
-                    'remote_tempdir': '/shared/user'}
+                    'remote_tempdir': '/shared/ok'}
 
         with patch.object(transport_module, '_host_is_local',
                           return_value=True), \
@@ -718,7 +726,7 @@ class TestReviewRound1(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_last_update_local_missing_extension(self):
-        # The reviewer's repro: a dir holding only .res/.msg (no .out)
+        # The repro: a dir holding only .res/.msg (no .out)
         # used to die with "exited with status 2"; listdir+stat must work.
         from aview_hpc._cli import HPCSession
 

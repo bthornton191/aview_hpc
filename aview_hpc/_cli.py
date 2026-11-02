@@ -108,7 +108,7 @@ class HPCSession():
         self.job_name: str = job_name
         self.job_id: int = job_id
 
-        # Transport seam (task): local when running ON the submit
+        # Transport seam: local when running ON the submit
         # host, SSH otherwise.  select_transport logs which one and why.
         # The session's RESOLVED username/key_filename/remote_tempdir are
         # passed through: the SSH path keeps the argument-over-config
@@ -131,7 +131,7 @@ class HPCSession():
     def _connect(self):
         """Deprecated seam kept for the in-Aview job_monitor dashboard only.
 
-        The transport refactor (task) moved connection handling into
+        The transport refactor moved connection handling into
         :class:`aview_hpc.transport.SSHTransport`.  The (un-shipped)
         job_monitor dashboard still reaches for ``session.ssh``/``session.ftp``
         directly; exposing the underlying paramiko objects here keeps that

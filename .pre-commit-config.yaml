@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: denylist
+        name: denylist (public repo)
+        entry: python scripts/check_denylist.py
+        language: system
+        pass_filenames: true

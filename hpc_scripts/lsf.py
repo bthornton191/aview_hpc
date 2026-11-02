@@ -1,5 +1,5 @@
 #! /usr/bin/python3
-'''Submit an ACF file to the cluster using LSF (Cadence farm farm)
+'''Submit an ACF file to the cluster using LSF (site the farm farm)
 
 usage: lsf.py <acf_file> [options]
 
@@ -9,12 +9,14 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   --mins MINS           Wall-clock limit for the job, in minutes (default: 720)
-  --queue QUEUE         LSF queue (default: lnx64)
+  --queue QUEUE         LSF queue (default: $AVIEW_HPC_QUEUE, then the 'queue'
+                        key in ~/.aview_hpc, then 'normal')
   --project PROJECT     Farm project label, PRODUCT:RELEASE:GROUP:PURPOSE[:extra...]
                         (required; falls back to $LSF_PROJECT, then the
                         'project' key in ~/.aview_hpc)
-  --res_req RES_REQ     LSF resource requirement string (default: pins to
-                        RHEL 8.6+ or RHEL 9 hosts)
+  --res_req RES_REQ     LSF resource requirement string (default:
+                        $AVIEW_HPC_RES_REQ, then the 'res_req' key in
+                        ~/.aview_hpc, then none)
   --adams_home DIR      Adams installation directory containing `mdi`
                         (required; falls back to $ADAMS_HOME, then the
                         'adams_home' key in ~/.aview_hpc)
@@ -35,13 +37,15 @@ note:
     * The .adm file from the .acf file
     * The NTHREADS option in the .adm file
 
-The submission goes through the site wrapper /opt/lsf/bin/bsub, which
-enforces the Cadence farm rules (mandatory -W and -P, etc.). On success bsub
+The submission goes through the bsub executable named by $AVIEW_HPC_BSUB or
+the 'bsub' key in ~/.aview_hpc (default: 'bsub' on PATH, e.g.
+/opt/lsf/bin/bsub). A site wrapper may enforce farm rules (mandatory -W and
+-P, etc.). On success bsub
 prints "Job <id> is submitted to queue <queue>.", which is what the
 aview_hpc client parses.
 
 Why the ~/.aview_hpc fallback: aview_hpc runs this script through a
-non-interactive SSH exec, which sources no login files, and the qual harness
+non-interactive SSH exec, which sources no login files, and a test harness
 never forwards --project/--adams_home/--license. Environment variables are
 therefore usually absent, and the per-user config file is the only place a
 farm-specific value can live. Precedence: CLI flag > environment > config.
@@ -58,12 +62,14 @@ import traceback as tb
 from contextlib import contextmanager
 from pathlib import Path
 
-BSUB = '/opt/lsf/bin/bsub'
-DEFAULT_QUEUE = 'lnx64'
-DEFAULT_RES_REQ = 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'
-# Site rule (farm bsub wrapper): ^[A-Z]+:[^:]+:[A-Z]+:[^:]+ as a PREFIX, so
-# optional trailing ``:field`` segments are allowed (Cadence IT: "-P
-# <PRODUCT:release:GROUP:purpose[:optional-field]>").
+# Neutral defaults; site values come from ~/.aview_hpc keys (``bsub``,
+# ``queue``, ``res_req``) or the matching AVIEW_HPC_* environment variables.
+BSUB = 'bsub'
+DEFAULT_QUEUE = 'normal'
+DEFAULT_RES_REQ = ''
+# Some sites enforce ^[A-Z]+:[^:]+:[A-Z]+:[^:]+ as a PREFIX of the -P label, so
+# optional trailing ``:field`` segments are allowed
+# (PRODUCT:release:GROUP:purpose[:optional-field]).
 RE_PROJECT = re.compile(r'[A-Z]+:[^:]+:[A-Z]+:[^:]+(?::[^:]+)*')
 CONFIG_FILE = Path.home() / '.aview_hpc'
 
@@ -82,6 +88,15 @@ def load_config(config_file: Path = None) -> dict:
     # Keep only non-empty string values: a mistyped value (number, list) must
     # surface as a clean "is required" parser error, not a TypeError later.
     return {k: v for k, v in config.items() if isinstance(v, str) and v.strip()}
+
+
+
+def site_setting(key: str, env_var: str, default: str, config: dict = None) -> str:
+    """Resolve a site-specific value: environment > ~/.aview_hpc key > default."""
+    if config is None:
+        config = load_config()
+    return os.environ.get(env_var) or config.get(key) or default
+
 
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I | re.MULTILINE)
 RE_NTHREADS = re.compile(r'nthreads[ \t]*=[ \t]*(\d+)\b', flags=re.I)
@@ -215,7 +230,9 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
            project: str = None, res_req: str = DEFAULT_RES_REQ,
            adams_home: str = None, license_file: str = None,
            ld_library_path: str = None, email: str = 'noemail',
-           mem_mb: int = None, dry_run: bool = False, args: list = None):
+           mem_mb: int = None, dry_run: bool = False, args: list = None,
+           bsub: str = None):
+    bsub = bsub or site_setting('bsub', 'AVIEW_HPC_BSUB', BSUB)
     job_name = acf_file.stem
     n_cpus = get_n_cpus(get_adm_from_acf(acf_file))
 
@@ -239,7 +256,8 @@ def submit(acf_file: Path, mins: int = 720, queue: str = DEFAULT_QUEUE,
 
         cmd = build_bsub_command(script_file, job_name, mins=mins, queue=queue,
                                  project=project, res_req=res_req,
-                                 n_cpus=n_cpus, email=email, mem_mb=mem_mb)
+                                 n_cpus=n_cpus, email=email, mem_mb=mem_mb,
+                                 bsub=bsub)
 
         if dry_run:
             print(f'DRY-RUN: would write job script {script_file}:')
@@ -291,14 +309,19 @@ def main():
                         type=int,
                         default=60 * 12,
                         help='Wall-clock limit for the job, in minutes (default: 720)')
-    parser.add_argument('--queue', type=str, default=DEFAULT_QUEUE,
-                        help=f'LSF queue (default: {DEFAULT_QUEUE})')
     config = load_config()
+    default_queue = site_setting('queue', 'AVIEW_HPC_QUEUE', DEFAULT_QUEUE, config)
+    parser.add_argument('--queue', type=str, default=default_queue,
+                        help=f'LSF queue (default: {default_queue}; falls back to '
+                             '$AVIEW_HPC_QUEUE, then the queue key in ~/.aview_hpc)')
     parser.add_argument('--project', type=str,
                         default=os.environ.get('LSF_PROJECT') or config.get('project'),
                         help='Farm project PRODUCT:RELEASE:GROUP:PURPOSE[:extra] (required)')
-    parser.add_argument('--res_req', type=str, default=DEFAULT_RES_REQ,
-                        help='LSF resource requirement string')
+    parser.add_argument('--res_req', type=str, default=site_setting('res_req', 'AVIEW_HPC_RES_REQ',
+                                             DEFAULT_RES_REQ, config),
+                        help='LSF resource requirement string (default: '
+                             '$AVIEW_HPC_RES_REQ, then the res_req key in ~/.aview_hpc, '
+                             'then none)')
     parser.add_argument('--adams_home', type=str,
                         default=os.environ.get('ADAMS_HOME') or config.get('adams_home'),
                         help='Adams installation directory containing mdi (required)')
