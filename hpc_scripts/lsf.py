@@ -1,5 +1,5 @@
 #! /usr/bin/python3
-'''Submit an ACF file to the cluster using LSF (site the farm farm)
+'''Submit an ACF file to the cluster using LSF (generic site LSF farm)
 
 usage: lsf.py <acf_file> [options]
 

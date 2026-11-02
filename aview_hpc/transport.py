@@ -1,7 +1,7 @@
 """Transport layer for aview_hpc: SSH (historical) vs local (no SSH).
 
 Why: on a Linux submit host the submitter IS
-the the farm LSF submit host, so ``HPCSession``'s paramiko SSH+SFTP connection
+the LSF farm submit host, so ``HPCSession``'s paramiko SSH+SFTP connection
 is a self-SSH -- pointless overhead that also depends on a self-key.
 Windows submitters still need SSH (Adams View on Windows blocks paramiko
 in-process, so the client runs as the frozen exe there and the CLI always

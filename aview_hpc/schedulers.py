@@ -199,8 +199,7 @@ RE_LSF_TIME = re.compile(r'([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})
 
 
 class LSFBackend(SchedulerBackend):
-    """Backend for IBM Spectrum LSF, verified against the site ``the farm``
-    farm (LSF 10.1.0.15) on 2026-10-01.
+    """Backend for IBM Spectrum LSF, verified against a site LSF farm (LSF 10.1.0.15) on 2026-10-01.
 
     Notes on the job table:
 

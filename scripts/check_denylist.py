@@ -31,6 +31,11 @@ DENYLIST = [
 ]
 COMPILED = [re.compile(p, re.IGNORECASE) for p in DENYLIST]
 
+# The one address allowed to appear, and only in git author/committer/tagger
+# identity fields (never in file content or commit messages).  Matched as the
+# exact angle-bracketed string, so any other cadence.com address still fails.
+ALLOWED_IDENTITY = '<thornton@cadence.com>'
+
 
 def load_allow():
     out = []
@@ -49,6 +54,30 @@ def scan_text(name, text, allow, hits):
             m = pat.search(line)
             if m and not any(p == name and a.search(line) for p, a in allow):
                 hits.append(f'{name}:{n}: [{pat.pattern}] {line.strip()[:120]}')
+
+
+def scan_identities(name, text, allow, hits):
+    """Scan author/committer/tagger lines; permit only ALLOWED_IDENTITY."""
+    scan_text(name, text.replace(ALLOWED_IDENTITY, '<>'), allow, hits)
+
+
+def scan_history(repo, allow, hits):
+    """Scan all refs of ``repo``: identities, messages, diffs, tag objects."""
+    def git(*a):
+        return subprocess.run(['git', '-C', str(repo), *a], capture_output=True,
+                              encoding='utf-8', errors='replace').stdout
+    scan_identities('<identities>', git(
+        'log', '--all', '--format=%an <%ae>%n%cn <%ce>'), allow, hits)
+    # messages and diffs only: no identity fields here, so no exemption applies
+    scan_text('<history>', git(
+        'log', '--all', '-p', '--format=commit %H%n%B',
+        '--', '.', f':(exclude){SELF}'), allow, hits)
+    for tag in git('tag', '-l').split():
+        if git('cat-file', '-t', tag).strip() != 'tag':
+            continue
+        head, _, body = git('cat-file', 'tag', tag).partition('\n\n')
+        scan_identities(f'<tag {tag} header>', head, allow, hits)
+        scan_text(f'<tag {tag} message>', body, allow, hits)
 
 
 def main(argv):
@@ -70,12 +99,7 @@ def main(argv):
             continue
         scan_text(rel, data.decode('utf-8', 'replace'), allow, hits)
     if history:
-        log = subprocess.run(
-            ['git', 'log', '--all', '-p', '--format=commit %H%n%an <%ae>%n%B',
-             '--', '.', f':(exclude){SELF}'],
-            cwd=ROOT, capture_output=True, text=True, encoding='utf-8',
-            errors='replace').stdout
-        scan_text('<history>', log, allow, hits)
+        scan_history(ROOT, allow, hits)
     for h in hits:
         print(h)
     if hits:
