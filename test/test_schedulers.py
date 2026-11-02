@@ -2,7 +2,7 @@
 
 These tests are pure unit tests: they run against captured fixture text
 (no live cluster needed). The fixture `bjobs_sample.json` contains records
-captured verbatim from the Cadence sjlsf01 farm on 2026-10-01 (LSF
+captured verbatim from an LSF farm on 2026-10-01 (LSF
 10.1.0.15) plus synthetic records for states not present in the capture.
 """
 import importlib.util
@@ -105,7 +105,7 @@ class TestSlurmBackend(unittest.TestCase):
         self.assertEqual(df.loc[1, 'JobName'], 'pend_job')
         self.assertEqual(df.loc[1, 'Elapsed'], '00:00:00')
         self.assertTrue(pd.isna(df.loc[1, 'Start']))
-        self.assertEqual(df.loc[1, 'WorkDir'], '/home/thornton/hpc_tmp/pend_job.efgh')
+        self.assertEqual(df.loc[1, 'WorkDir'], '/home/user/hpc_tmp/pend_job.efgh')
 
     def test_cleanup_command(self):
         self.assertEqual(self.backend.cleanup_command(Path('/tmp/x')),
@@ -127,9 +127,25 @@ class TestLSFBackend(unittest.TestCase):
         self.assertIsNone(self.backend.re_submission_response.search(
             'Job not submitted: invalid project\n'))
 
+    def test_job_table_command_site_bjobs_from_env_and_config(self):
+        with patch.dict(os.environ, {'AVIEW_HPC_BJOBS': '/opt/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
+        self.assertTrue(cmd.startswith('env LC_ALL=C /opt/lsf/bin/bjobs -a -o "'))
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
+        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config',
+                      return_value={'bjobs': '/srv/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
+        self.assertTrue(cmd.startswith('env LC_ALL=C /srv/lsf/bin/bjobs -a '))
+
+    def test_job_table_command_default_bjobs_on_path(self):
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
+        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config', return_value={}):
+            cmd = self.backend.job_table_command(days=7)
+        self.assertTrue(cmd.startswith('env LC_ALL=C bjobs -a -o "'))
+
     def test_job_table_command(self):
-        cmd = self.backend.job_table_command(days=7)
-        self.assertTrue(cmd.startswith('env LC_ALL=C /grid/sfi/farm/bin/bjobs -a -o "'))
+        with patch.dict(os.environ, {'AVIEW_HPC_BJOBS': '/opt/lsf/bin/bjobs'}):
+            cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.endswith('" -json'))
         self.assertIn('exec_cwd', cmd)
         self.assertIn('sub_cwd', cmd)
@@ -171,7 +187,7 @@ class TestLSFBackend(unittest.TestCase):
         # Real captured record (RUN)
         row = df[df['JobID'] == 5346451].iloc[0]
         self.assertEqual(row['State'], 'RUNNING')
-        self.assertEqual(row['WorkDir'], '/home/ambinteg')  # \/ unescaped
+        self.assertEqual(row['WorkDir'], '/home/otheruser')  # \/ unescaped
         self.assertEqual(row['Start'], '2026-09-30T20:32:15')
         # The " L" marker is stripped and the (projected, for running jobs)
         # finish time is kept; see the LSFBackend docstring.
@@ -192,9 +208,9 @@ class TestLSFBackend(unittest.TestCase):
         self.assertEqual(df[df['JobID'] == 5800004].iloc[0]['State'], 'SUSPENDED')
 
         failed_state = df[df['JobID'] == 5800003].iloc[0]['State']
-        self.assertEqual(failed_state.lower(), 'failed')  # CDM contract
+        self.assertEqual(failed_state.lower(), 'failed')  # consumer contract
 
-        # exit_code column (live-verified shapes on sjlsf01 2026-10-09:
+        # exit_code column (live-verified shapes on a farm 2026-10-09:
         # 'exit 27' job -> "27"; RUN/DONE/PEND -> ""; the fixture's second
         # DONE record carries "0" -- a DONE job that reports 0 must parse).
         # Kept as str: an int cast would NaN-ify every non-EXIT row.
@@ -208,17 +224,17 @@ class TestLSFBackend(unittest.TestCase):
         pending = df[df['JobID'] == 5800001].iloc[0]
         self.assertTrue(pd.isna(pending['Start']))
         self.assertEqual(pending['Elapsed'], '00:00:00')
-        # PEND jobs get a WorkDir from SUB_CWD (t_96514c3c): LSF leaves
+        # PEND jobs get a WorkDir from SUB_CWD: LSF leaves
         # EXEC_CWD empty until dispatch, so a queued aview_hpc job
         # (lsf.py runs with cwd = remote dir) is only findable via SUB_CWD.
-        # This is the set-83 regression shape (run 37939750883: two sub-sims
+        # This is the regression shape (two sub-sims
         # read as "absent" for 900 s and killed while PEND).
         self.assertEqual(pending['State'], 'PENDING')
-        self.assertEqual(pending['WorkDir'], '/home/thornton/hpc_tmp/x.abcd')
+        self.assertEqual(pending['WorkDir'], '/home/user/hpc_tmp/x.abcd')
 
         # RUN rows: EXEC_CWD is authoritative (SUB_CWD == EXEC_CWD live, but
         # the fill must never be able to override a populated EXEC_CWD).
-        self.assertEqual(df[df['JobID'] == 5346451].iloc[0]['WorkDir'], '/home/ambinteg')
+        self.assertEqual(df[df['JobID'] == 5346451].iloc[0]['WorkDir'], '/home/otheruser')
 
     def test_parse_job_table_dollar_home_sub_cwd_degrades(self):
         """"$HOME" (submission cwd not representable) must NOT become a
@@ -231,7 +247,7 @@ class TestLSFBackend(unittest.TestCase):
                     'START_TIME': '', 'FINISH_TIME': '',
                     'RUN_TIME': '0 second(s)', 'RUNTIMELIMIT': '720.0',
                     'NEXEC_HOST': '', 'NTHREADS': '',
-                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
+                    'COMMAND': '/home/user/scripts/lsf.py x.acf',
                     'EXEC_CWD': '', 'SUB_CWD': '$HOME', 'EXIT_CODE': ''}]
         df = self.backend.parse_job_table(
             _json.dumps({'COMMAND': 'bjobs', 'JOBS': 1, 'RECORDS': records}))
@@ -248,7 +264,7 @@ class TestLSFBackend(unittest.TestCase):
                     'START_TIME': '', 'FINISH_TIME': '',
                     'RUN_TIME': '0 second(s)', 'RUNTIMELIMIT': '720.0',
                     'NEXEC_HOST': '', 'NTHREADS': '',
-                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
+                    'COMMAND': '/home/user/scripts/lsf.py x.acf',
                     'EXEC_CWD': '', 'EXIT_CODE': ''},
                    {'JOBID': '5800012', 'JOB_NAME': 'x', 'STAT': 'RUN',
                     'SUBMIT_TIME': 'Oct  1 14:02:11 2026',
@@ -256,13 +272,13 @@ class TestLSFBackend(unittest.TestCase):
                     'FINISH_TIME': '', 'RUN_TIME': '0 second(s)',
                     'RUNTIMELIMIT': '720.0', 'NEXEC_HOST': '1',
                     'NTHREADS': '8',
-                    'COMMAND': '/home/thornton/scripts/lsf.py x.acf',
-                    'EXEC_CWD': '/home/thornton/hpc_tmp/r', 'EXIT_CODE': ''}]
+                    'COMMAND': '/home/user/scripts/lsf.py x.acf',
+                    'EXEC_CWD': '/home/user/hpc_tmp/r', 'EXIT_CODE': ''}]
         df = self.backend.parse_job_table(
             _json.dumps({'COMMAND': 'bjobs', 'JOBS': 2, 'RECORDS': records}))
         self.assertEqual(df[df['JobID'] == 5800011].iloc[0]['WorkDir'], '')
         self.assertEqual(df[df['JobID'] == 5800012].iloc[0]['WorkDir'],
-                         '/home/thornton/hpc_tmp/r')
+                         '/home/user/hpc_tmp/r')
 
     def test_parse_job_table_empty(self):
         text = '{"COMMAND":"bjobs","JOBS":0,"RECORDS":[]}'
@@ -290,12 +306,12 @@ class TestConfig(unittest.TestCase):
                                key_filename='C:/k/id_ed25519', remote_tempdir='/tmp/x')
                 # A later partial update (e.g. another CLI call) that does
                 # not repeat every key must not null them out.
-                cfg.set_config(submit_cmd='python3 /home/thornton/scripts/lsf.py')
+                cfg.set_config(submit_cmd='python3 /home/user/scripts/lsf.py')
                 config = cfg.get_config()
                 self.assertEqual(config['scheduler'], 'lsf')
                 self.assertEqual(config['key_filename'], 'C:/k/id_ed25519')
                 self.assertEqual(config['remote_tempdir'], '/tmp/x')
-                self.assertEqual(config['submit_cmd'], 'python3 /home/thornton/scripts/lsf.py')
+                self.assertEqual(config['submit_cmd'], 'python3 /home/user/scripts/lsf.py')
 
     def test_scheduler_null_in_config_falls_back_to_slurm(self):
         from aview_hpc import config as cfg
@@ -373,11 +389,12 @@ class TestLSFScript(unittest.TestCase):
     def test_build_bsub_command(self):
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
-            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8)
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
+            res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8,
+            bsub='/opt/lsf/bin/bsub')
 
         self.assertIn(' -W 12:00 ', cmd)
-        self.assertIn(' -P MSC:2023.4:NNL:SIMULATION ', cmd)
+        self.assertIn(' -P EXAMPLE:1.0:GRP:PURPOSE ', cmd)
         self.assertIn(' -q lnx64 ', cmd)
         # ONE combined -R string: this LSF rejects multiple -R options when a
         # span/cu/affinity section is involved (live-verified 2026-10-01).
@@ -388,7 +405,7 @@ class TestLSFScript(unittest.TestCase):
         self.assertIn(' -oo myjob.log ', cmd)
         self.assertIn(' -eo myjob.err ', cmd)
         self.assertIn(' -u noemail ', cmd)
-        self.assertTrue(cmd.startswith('/grid/sfi/farm/bin/bsub '))
+        self.assertTrue(cmd.startswith('/opt/lsf/bin/bsub '))
         # bsub has no script-file argument (trailing args are the job COMMAND,
         # which made every job exit 127 before this fix): the job script is
         # fed via stdin redirection (live-verified 2026-10-01).
@@ -400,7 +417,7 @@ class TestLSFScript(unittest.TestCase):
         # res_req that already has a span section: passed through, no duplicate
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='select[x] span[hosts=1]', n_cpus=8)
         self.assertIn("-R 'select[x] span[hosts=1]'", cmd)
         self.assertEqual(cmd.count('span['), 1)
@@ -408,21 +425,21 @@ class TestLSFScript(unittest.TestCase):
         # empty res_req degrades to span[hosts=1] alone (no leading space)
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='  ', n_cpus=8)
         self.assertIn("-R 'span[hosts=1]'", cmd)
 
         # None res_req (explicit None from a caller) degrades the same way
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req=None, n_cpus=8)
         self.assertIn("-R 'span[hosts=1]'", cmd)
 
     def test_build_bsub_command_quotes_path_with_spaces(self):
         cmd = lsf_script.build_bsub_command(
             script_file='my job_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8)
         self.assertTrue(cmd.endswith(" < 'my job_0.lsf'"))
         # Round-trips through shlex exactly as two trailing tokens
@@ -430,15 +447,15 @@ class TestLSFScript(unittest.TestCase):
 
     def test_build_job_script(self):
         script = lsf_script.build_job_script(
-            Path('/home/thornton/tmp/m/myjob.acf'),
-            license_file='1700@sjflex5',
-            adams_home='/home/thornton/adams/2023_4_1')
-        self.assertIn('export MSC_LICENSE_FILE=1700@sjflex5', script)
-        self.assertIn('/home/thornton/adams/2023_4_1/mdi -c ru-s i myjob.acf exit', script)
+            Path('/home/user/tmp/m/myjob.acf'),
+            license_file='1700@license.example.com',
+            adams_home='/home/user/adams/2023_4_1')
+        self.assertIn('export MSC_LICENSE_FILE=1700@license.example.com', script)
+        self.assertIn('/home/user/adams/2023_4_1/mdi -c ru-s i myjob.acf exit', script)
         self.assertNotIn('LD_LIBRARY_PATH', script)
 
         script = lsf_script.build_job_script(
-            Path('/x/m.acf'), license_file='1700@sjflex5', adams_home='/a/b/',
+            Path('/x/m.acf'), license_file='1700@license.example.com', adams_home='/a/b/',
             ld_library_path='/opt/libs')
         self.assertIn('export LD_LIBRARY_PATH=/opt/libs', script)
         self.assertIn('/a/b/mdi', script)
@@ -462,17 +479,20 @@ class TestLSFScript(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--mins', '5',
-                    '--project', 'MSC:2023.4:NNL:SIMULATION',
-                    '--adams_home', '/home/thornton/adams/2023_4_1',
-                    '--license', '1700@sjflex5', '--dry_run']
-            with patch.object(sys, 'argv', argv), patch('sys.stdout', new=StringIO()) as out:
+                    '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+                    '--adams_home', '/home/user/adams/2023_4_1',
+                    '--license', '1700@license.example.com', '--dry_run']
+            site_env = {'AVIEW_HPC_BSUB': '/opt/lsf/bin/bsub',
+                        'AVIEW_HPC_QUEUE': 'lnx64',
+                        'AVIEW_HPC_RES_REQ': 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'}
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, site_env),                     patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
             output = out.getvalue()
 
         self.assertIn('DRY-RUN: would run:', output)
-        self.assertIn('/grid/sfi/farm/bin/bsub', output)
+        self.assertIn('/opt/lsf/bin/bsub', output)
         self.assertIn('-W 0:05 ', output)
-        self.assertIn('-P MSC:2023.4:NNL:SIMULATION', output)
+        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE', output)
         self.assertIn('-q lnx64', output)
         # One combined -R string, not two -R flags (pins the regression the
         # old two-flag form would show: substring 'span[hosts=1]' alone
@@ -485,9 +505,35 @@ class TestLSFScript(unittest.TestCase):
         # Job script fed via stdin, as the LAST words of the command (nothing
         # may follow the redirect or bsub treats it as the job COMMAND)
         self.assertTrue(bsub_line.endswith('< m.lsf'))
-        self.assertIn('MSC_LICENSE_FILE=1700@sjflex5', output)
-        self.assertIn('/home/thornton/adams/2023_4_1/mdi -c ru-s i m.acf exit', output)
+        self.assertIn('MSC_LICENSE_FILE=1700@license.example.com', output)
+        self.assertIn('/home/user/adams/2023_4_1/mdi -c ru-s i m.acf exit', output)
         self.assertNotIn('Job <', output)
+
+    def test_dry_run_neutral_defaults_and_config_keys(self):
+        """No site values in code: defaults are neutral; ``bsub``/``queue``/
+        ``res_req`` keys in ~/.aview_hpc supply the site values."""
+        argv_tail = ['--mins', '5', '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+                     '--adams_home', '/home/user/adams', '--license',
+                     '1700@license.example.com', '--dry_run']
+        clean = {k: v for k, v in os.environ.items() if not k.startswith('AVIEW_HPC_')}
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            argv = ['lsf.py', str(acf)] + argv_tail
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value={}),                     patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+            line = next(l for l in out.getvalue().splitlines()
+                        if l.startswith('DRY-RUN: would run:'))
+            self.assertIn('would run: bsub -q normal ', line)
+            self.assertIn(" -R 'span[hosts=1]' ", line)
+
+            cfg = {'bsub': '/opt/lsf/bin/bsub', 'queue': 'short',
+                   'res_req': 'select[type==any]'}
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value=cfg),                     patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+            line = next(l for l in out.getvalue().splitlines()
+                        if l.startswith('DRY-RUN: would run:'))
+            self.assertIn('would run: /opt/lsf/bin/bsub -q short ', line)
+            self.assertIn("-R 'select[type==any] span[hosts=1]'", line)
 
     def test_submit_rejects_forwarded_extras(self):
         """Unknown/extra args forwarded after the options would become the
@@ -497,7 +543,7 @@ class TestLSFScript(unittest.TestCase):
             acf = self._write_model(tmpdir)
             with self.assertRaises(SystemExit) as ctx:
                 lsf_script.submit(Path(acf), mins=5, queue='lnx64',
-                                  project='MSC:2023.4:NNL:SIMULATION',
+                                  project='EXAMPLE:1.0:GRP:PURPOSE',
                                   res_req=lsf_script.DEFAULT_RES_REQ,
                                   adams_home='/a', license_file='1700@x',
                                   args=['--acar', 'True'])
@@ -507,8 +553,8 @@ class TestLSFScript(unittest.TestCase):
         # _main_env isolates env + config: without it the parser falls back
         # to the REAL ~/.aview_hpc on the running machine, and on the LSF
         # submit host that file carries a project key -- main() then runs a
-        # REAL bsub instead of exiting (observed on sjcvl-thornton
-        # 2026-10-08: jobs 566843/566932/567142 EXITed from this test).
+        # REAL bsub instead of exiting (observed on submit-host
+        # 2026-10-08: several jobs EXITed from this test).
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--adams_home', '/a', '--license', '1700@x']
@@ -541,19 +587,19 @@ class TestLSFScript(unittest.TestCase):
         return out.getvalue()
 
     def test_project_with_optional_fields_accepted(self):
-        """Cadence IT format allows trailing :optional-field segments."""
+        """site IT format allows trailing :optional-field segments."""
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
-            out = self._main_env(['lsf.py', str(acf), '--project', 'ADAMS:2023.4.1:AE:qual:NNL',
+            out = self._main_env(['lsf.py', str(acf), '--project', 'EXAMPLE:1.0:GRP:PURPOSE:extra',
                                   '--adams_home', '/a', '--license', '1700@x', '--dry_run'],
                                  tmpdir=tmpdir)
-        self.assertIn('-P ADAMS:2023.4.1:AE:qual:NNL', out)
+        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE:extra', out)
 
     def test_project_regex_rejects_bad_shapes(self):
         for bad in ('adams:2023.4.1:AE:qual', 'ADAMS:2023.4.1:ae:qual', 'ADAMS:2023.4.1:AE',
-                    'ADAMS::AE:qual', 'ADAMS:2023.4.1:AE:qual:', 'no-colons'):
+                    'ADAMS::AE:qual', 'EXAMPLE:1.0:GRP:PURPOSE:', 'no-colons'):
             self.assertIsNone(lsf_script.RE_PROJECT.fullmatch(bad), bad)
-        for good in ('ADAMS:2023.4.1:AE:qual', 'ADAMS:2023.4.1:AE:qual:NNL', 'EDI:23.1:RD:build:x:y'):
+        for good in ('EXAMPLE:1.0:GRP:PURPOSE', 'EXAMPLE:1.0:GRP:PURPOSE:extra', 'EDI:23.1:RD:build:x:y'):
             self.assertIsNotNone(lsf_script.RE_PROJECT.fullmatch(good), good)
 
     def test_config_file_supplies_project_adams_home_license(self):
@@ -562,12 +608,12 @@ class TestLSFScript(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             out = self._main_env(['lsf.py', str(acf), '--dry_run'], tmpdir=tmpdir,
-                                 config={'project': 'ADAMS:2023.4.1:AE:qual:NNL',
+                                 config={'project': 'EXAMPLE:1.0:GRP:PURPOSE:extra',
                                          'adams_home': '/home/u/adams/2023_4_1',
-                                         'license': '1700@sjflex5'})
-        self.assertIn('-P ADAMS:2023.4.1:AE:qual:NNL', out)
+                                         'license': '1700@license.example.com'})
+        self.assertIn('-P EXAMPLE:1.0:GRP:PURPOSE:extra', out)
         self.assertIn('/home/u/adams/2023_4_1/mdi -c ru-s i m.acf exit', out)
-        self.assertIn('MSC_LICENSE_FILE=1700@sjflex5', out)
+        self.assertIn('MSC_LICENSE_FILE=1700@license.example.com', out)
 
     def test_precedence_cli_over_env_over_config(self):
         with TemporaryDirectory() as tmpdir:
@@ -607,7 +653,7 @@ class TestLSFScript(unittest.TestCase):
         # ~/.aview_hpc can supply adams_home and turn this into a real bsub.
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
-            argv = ['lsf.py', str(acf), '--project', 'MSC:2023.4:NNL:SIMULATION',
+            argv = ['lsf.py', str(acf), '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
                     '--license', '1700@x']
             with self.assertRaises(SystemExit):
                 self._main_env(argv, tmpdir=tmpdir, config={})
@@ -617,9 +663,9 @@ class TestSubmitKwargTranslation(unittest.TestCase):
     """Scheduler backends translate generic submit kwargs (mem/nice/...) into
     the submit script's own vocabulary BEFORE they become --options.
 
-    Background: the CDM qual harness passes mem=JOB_MEM_GB ('32G') and
-    nice=MAX_NICE (2147483645) -- sbatch-era options from the retired DEWET
-    Slurm cluster. hpc_scripts/lsf.py correctly refuses unknown options
+    Background: a client harness passes mem=JOB_MEM_GB ('32G') and
+    nice=MAX_NICE (2147483645) -- sbatch-era options from the retired Slurm
+    cluster. hpc_scripts/lsf.py correctly refuses unknown options
     (trailing words become the bsub job COMMAND line), which killed the
     first farm-backed Linux CI run (37824964058, 2026-10-08). The fix is
     HERE, in the scheduler backend, so every caller stays scheduler-agnostic
@@ -627,7 +673,7 @@ class TestSubmitKwargTranslation(unittest.TestCase):
     purely via ~/.aview_hpc.
     """
 
-    # The exact kwargs the CDM qual harness sends (hpc_jobs.py run_on_hpc /
+    # The exact kwargs a client harness sends (hpc_jobs.py run_on_hpc /
     # base_test.py submit block): L184-185 mem=JOB_MEM_GB, nice=MAX_NICE.
     CDM_KWARGS = {'mins': 1000, 'mem': '32G', 'nice': 2147483645}
 
@@ -714,7 +760,7 @@ class TestSubmitKwargTranslation(unittest.TestCase):
 
     def test_base_backend_identity(self):
         """The base class default is identity (backends without translation
-        needs inherit it; the DEWET slurm script's frozen behavior is the
+        needs inherit it; the slurm script's frozen behavior is the
         precedent)."""
         from aview_hpc.schedulers import SchedulerBackend
         kwargs = {'mem': '32G', 'nice': 1}
@@ -729,7 +775,7 @@ class TestLSFMemMb(unittest.TestCase):
     def test_rusage_merged_into_single_r(self):
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', n_cpus=8,
             mem_mb=32768)
         self.assertEqual(cmd.count(' -R '), 1)
@@ -740,7 +786,7 @@ class TestLSFMemMb(unittest.TestCase):
     def test_mem_mb_without_res_req(self):
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='', n_cpus=8, mem_mb=32768)
         self.assertEqual(cmd.count(' -R '), 1)
         self.assertIn("-R 'rusage[mem=32768] span[hosts=1]'", cmd)
@@ -750,7 +796,7 @@ class TestLSFMemMb(unittest.TestCase):
         doubled."""
         cmd = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='rusage[mem=1024] select[x]', n_cpus=8, mem_mb=32768)
         self.assertEqual(cmd.count(' -R '), 1)
         self.assertIn("-R 'rusage[mem=1024] select[x] span[hosts=1]'", cmd)
@@ -761,7 +807,7 @@ class TestLSFMemMb(unittest.TestCase):
         form (regression pin for existing callers)."""
         with_mem = lsf_script.build_bsub_command(
             script_file='myjob_0.lsf', job_name='myjob', mins=720,
-            queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+            queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
             res_req='select[x]', n_cpus=8, mem_mb=None)
         self.assertNotIn('rusage', with_mem)
         self.assertEqual(with_mem.count(' -R '), 1)
@@ -770,7 +816,7 @@ class TestLSFMemMb(unittest.TestCase):
         with self.assertRaises(ValueError):
             lsf_script.build_bsub_command(
                 script_file='myjob_0.lsf', job_name='myjob', mins=720,
-                queue='lnx64', project='MSC:2023.4:NNL:SIMULATION',
+                queue='lnx64', project='EXAMPLE:1.0:GRP:PURPOSE',
                 res_req='select[x]', n_cpus=8, mem_mb=0)
 
     def test_mem_mb_cli_dry_run_end_to_end(self):
@@ -780,9 +826,9 @@ class TestLSFMemMb(unittest.TestCase):
             writer = TestLSFScript()
             acf = writer._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--mins', '5',
-                    '--project', 'MSC:2023.4:NNL:SIMULATION',
-                    '--adams_home', '/home/thornton/adams/2023_4_1',
-                    '--license', '1700@sjflex5', '--mem_mb', '32768',
+                    '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+                    '--adams_home', '/home/user/adams/2023_4_1',
+                    '--license', '1700@license.example.com', '--mem_mb', '32768',
                     '--dry_run']
             with patch.object(sys, 'argv', argv), patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
@@ -801,7 +847,7 @@ class TestLSFMemMb(unittest.TestCase):
             writer = TestLSFScript()
             acf = writer._write_model(tmpdir)
             argv = ['lsf.py', str(acf), '--mins', '5',
-                    '--project', 'MSC:2023.4:NNL:SIMULATION',
+                    '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
                     '--adams_home', '/a', '--license', '1700@x',
                     '--mem', '32G', '--nice', '2147483645', '--dry_run']
             with patch.object(sys, 'argv', argv):
@@ -890,7 +936,7 @@ class TestSessionAppliesTranslation(unittest.TestCase):
     def test_submit_lsf_translates_before_ssh_transport(self):
         transport, forwarded = self._ssh_style_transport()
         session = self._make_session('lsf', transport)
-        session.submit_cmd = '/home/thornton/scripts/lsf.py'
+        session.submit_cmd = '/home/user/scripts/lsf.py'
 
         models = Path(__file__).parent / 'models'
         session.mkdtemp_remote = lambda name=None, n_rand=4: Path('/remote/wd')
@@ -927,7 +973,7 @@ class TestSessionAppliesTranslation(unittest.TestCase):
         transport, forwarded = self._ssh_style_transport(
             'Job <530968> is submitted to queue lnx64')
         session = self._make_session('lsf', transport)
-        session.submit_cmd = '/home/thornton/scripts/lsf.py'
+        session.submit_cmd = '/home/user/scripts/lsf.py'
 
         def fake_exec_cleanup(backend, remote_dir):
             pass
@@ -987,12 +1033,12 @@ class TestSessionAppliesTranslation(unittest.TestCase):
 
 
 class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
-    """t_11595f7b acceptance: a ``submit_multi`` ROUND TRIP where chatter
+    """a ``submit_multi`` ROUND TRIP where chatter
     reaches stdout at BOTH layers still returns the parsed JSON.
 
     The full client stack is exercised, in-process, with no cluster:
 
-    ``aview_hpc.aview_hpc.submit_multi`` (the client wrapper the CDM
+    ``aview_hpc.aview_hpc.submit_multi`` (the client wrapper the consumer
     harness calls) -> ``run_cli`` (POSIX in-process branch) ->
     ``_cli.main`` (the REAL CLI: argparse, HPCSession.submit, backend
     translation, LocalTransport) -> a fake submit script (stand-in for
@@ -1000,7 +1046,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
     ITS stdout before the LSF submission line.
 
     On top of that, the HOST root logger carries a print-based handler
-    (CDM's AdamsLogFileHandler shape) -- the exact CI run 37923731507
+    (a consumer's AdamsLogFileHandler shape) -- the exact CI failure
     configuration that made ``json.loads(out)`` die at char 0 after LSF
     1337242 was already submitted.
     """
@@ -1017,7 +1063,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         script.write_text(
             '#!{python}\n'
             'import sys\n'
-            'print("Running: bsub -q lnx64 -P ADAMS:2023.4.1:AE:qual:NNL ...")\n'
+            'print("Running: bsub -q lnx64 -P EXAMPLE:1.0:GRP:PURPOSE:extra ...")\n'
             'print("Job <4242> is submitted to queue lnx64")\n'
             .format(python=sys.executable))
         return script
@@ -1038,7 +1084,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         saved_level = root_logger.level
         ph = self._PrintRootHandler()
         try:
-            # Host state exactly as the CDM plugin leaves it inside Adams
+            # Host state exactly as the a client plugin leaves it inside Adams
             # View: a print-based root handler at INFO.
             for h in saved_handlers:
                 root_logger.removeHandler(h)
@@ -1101,7 +1147,7 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
         noisy2 = ('{"log": "not the payload"}\n'
                   '{"remote_dirs": ["/r/d2"], "job_names": ["j2"], "job_ids": [8]}\n')
         self.assertEqual(_parse_cli_json(noisy2, 'submit_multi')['job_ids'], [8])
-        # Nothing parseable: RuntimeError (which the CDM harness retries),
+        # Nothing parseable: RuntimeError (which the client harness retries),
         # carrying the captured stdout for diagnosis.
         with self.assertRaises(RuntimeError) as ctx:
             _parse_cli_json('no json here at all\n', 'submit_multi')
@@ -1110,14 +1156,14 @@ class TestSubmitMultiRoundTripWithNoisyLayers(unittest.TestCase):
 
 
 class TestGetJobTableRoundTrip(unittest.TestCase):
-    """t_0f552d9b: the ExitCode column must survive the client wrapper's
-    CSV round trip as a clean string, the way CDM's scheduler_state reads
+    """the ExitCode column must survive the client wrapper's
+    CSV round trip as a clean string, the way a consumer's scheduler_state reads
     it (str(value) + blank guard -> note ' (exit code 27)').
 
     The CLI prints the DataFrame with ``df.to_csv(index=False)`` and the
     client wrapper re-parses with ``pd.read_csv``.  A column mixing '27'
     and '' would re-parse as float64 (27.0 / NaN) WITHOUT the dtype pin in
-    ``aview_hpc.aview_hpc.get_job_table`` -- making CDM's note read
+    ``aview_hpc.aview_hpc.get_job_table`` -- making a consumer's note read
     '(exit code 27.0)'.  These tests pin the pin.
     """
 
@@ -1135,7 +1181,7 @@ class TestGetJobTableRoundTrip(unittest.TestCase):
         self.assertEqual(failed['ExitCode'], '27')
         # String dtype (pandas 2 'object', pandas 3 'str') -- never float64.
         self.assertIn(str(df['ExitCode'].dtype), ('object', 'str'))
-        # CDM's exact consumption path: str() + blank guard -> note.
+        # the exact consumption path of a consumer: str() + blank guard -> note.
         exit_code = failed['ExitCode']
         note_src = '' if pd.isna(exit_code) else str(exit_code).strip()
         self.assertEqual(note_src, '27')

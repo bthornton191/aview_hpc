@@ -33,11 +33,11 @@ SLURM_SCRIPT = """#!/bin/bash
 
 export LC_ALL=C
 export MSC_OS_PREF=rhe79
-export LD_LIBRARY_PATH=/opt/hexagon/Adams/2022_1_875404/lib64
-export MSC_LICENSE_FILE=1700@10.20.0.10
+export LD_LIBRARY_PATH=/opt/adams/2022_1/lib64
+export MSC_LICENSE_FILE=1700@license.example.com
 
 #Add command and option to run target software
-/opt/hexagon/adams/2023_3/mdi -c ru-s i {acf_file} exit
+/opt/adams/2023_3/mdi -c ru-s i {acf_file} exit
 """
 
 RE_MODEL = re.compile(r'file/.*model[ \t]*=[ \t]*(.+)[ \t]*(?:,|$)', flags=re.I|re.MULTILINE)

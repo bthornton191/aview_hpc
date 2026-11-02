@@ -36,9 +36,12 @@ optional arguments:
 > This will **FAIL** if you provide additional arguments to the `FILE` command (e.g `FILE/MODEL=name, OUTPUT=name_out`)
 
 ## lsf.py
-Submit an ACF file to the cluster using LSF (written for the Cadence sjlsf01 farm,
-IBM Spectrum LSF 10.1.0.15, verified 2026-10-01). Submits through the site wrapper
-`/grid/sfi/farm/bin/bsub`, which enforces the farm rules (mandatory `-W` and `-P`).
+Submit an ACF file to the cluster using LSF (written for IBM Spectrum LSF 10.1).
+Submits through the `bsub` named by `$AVIEW_HPC_BSUB` or the `bsub` key in
+`~/.aview_hpc` (default: `bsub` on `PATH`, e.g. `/opt/lsf/bin/bsub`); a site
+wrapper may enforce farm rules (mandatory `-W` and `-P`). Queue and resource
+requirement defaults come from the `queue` / `res_req` keys (or
+`AVIEW_HPC_QUEUE` / `AVIEW_HPC_RES_REQ`); see the top-level README.
 
 ### Usage
 ```
@@ -48,11 +51,11 @@ positional arguments:
 
 optional arguments:
   --mins MINS           Wall-clock limit in minutes (default: 720)
-  --queue QUEUE         LSF queue (default: lnx64)
+  --queue QUEUE         LSF queue (default: $AVIEW_HPC_QUEUE, then `queue` key, then `normal`)
   --project PROJECT     Charge code PRODUCT:RELEASE:GROUP:PURPOSE (required; or $LSF_PROJECT)
-  --res_req RES_REQ     Resource requirement string (default: RHEL 8.6+/9 pin)
+  --res_req RES_REQ     Resource requirement string (default: $AVIEW_HPC_RES_REQ, then `res_req` key, then none)
   --adams_home DIR      Adams install dir containing `mdi` (required; or $ADAMS_HOME)
-  --license LICENSE     MSC license string, e.g. 1700@sjflex5 (required; or $MSC_LICENSE_FILE)
+  --license LICENSE     MSC license string, e.g. 1700@license.example.com (required; or $MSC_LICENSE_FILE)
   --ld_library_path P   Optional LD_LIBRARY_PATH for the solver
   --email EMAIL         bsub -u value (default: noemail)
   --dry_run             Print the bsub command line and job script instead of submitting

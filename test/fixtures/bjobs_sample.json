@@ -4,7 +4,7 @@
   "RECORDS": [
     {
       "JOBID": "5346451",
-      "JOB_NAME": "/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt",
+      "JOB_NAME": "/opt/tools/bin/nightly_build --target opt",
       "STAT": "RUN",
       "SUBMIT_TIME": "Sep 30 20:32:14 2026",
       "START_TIME": "Sep 30 20:32:15 2026",
@@ -13,9 +13,9 @@
       "RUNTIMELIMIT": "20000.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "13",
-      "COMMAND": "/eng/tools/cm/bin/BHstart --BHbld_sys lnx86_64_opt",
-      "EXEC_CWD": "/home/ambinteg",
-      "SUB_CWD": "/home/ambinteg",
+      "COMMAND": "/opt/tools/bin/nightly_build --target opt",
+      "EXEC_CWD": "/home/otheruser",
+      "SUB_CWD": "/home/otheruser",
       "EXIT_CODE": ""
     },
     {
@@ -29,14 +29,14 @@
       "RUNTIMELIMIT": "720.0",
       "NEXEC_HOST": "",
       "NTHREADS": "",
-      "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/x.acf",
+      "COMMAND": "/home/user/scripts/lsf.py /home/user/hpc_tmp/x.acf",
       "EXEC_CWD": "",
-      "SUB_CWD": "/home/thornton/hpc_tmp/x.abcd",
+      "SUB_CWD": "/home/user/hpc_tmp/x.abcd",
       "EXIT_CODE": ""
     },
     {
       "JOBID": "5800002",
-      "JOB_NAME": "cdm_variant_0128_a",
+      "JOB_NAME": "job_variant_0128_a",
       "STAT": "DONE",
       "SUBMIT_TIME": "Oct  1 13:58:02 2026",
       "START_TIME": "Oct  1 13:58:05 2026",
@@ -45,13 +45,13 @@
       "RUNTIMELIMIT": "720.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
-      "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/y.acf",
-      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0128_a.1234",
+      "COMMAND": "/home/user/scripts/lsf.py /home/user/hpc_tmp/y.acf",
+      "EXEC_CWD": "/home/user/hpc_tmp/job_variant_0128_a.1234",
       "EXIT_CODE": ""
     },
     {
       "JOBID": "5800003",
-      "JOB_NAME": "cdm_variant_0129_a",
+      "JOB_NAME": "job_variant_0129_a",
       "STAT": "EXIT",
       "SUBMIT_TIME": "Oct  1 13:58:03 2026",
       "START_TIME": "Oct  1 13:58:06 2026",
@@ -60,13 +60,13 @@
       "RUNTIMELIMIT": "720.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
-      "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/z.acf",
-      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0129_a.5678",
+      "COMMAND": "/home/user/scripts/lsf.py /home/user/hpc_tmp/z.acf",
+      "EXEC_CWD": "/home/user/hpc_tmp/job_variant_0129_a.5678",
       "EXIT_CODE": "27"
     },
     {
       "JOBID": "5800004",
-      "JOB_NAME": "cdm_variant_0130_a",
+      "JOB_NAME": "job_variant_0130_a",
       "STAT": "USUSP",
       "SUBMIT_TIME": "Oct  1 13:58:04 2026",
       "START_TIME": "Oct  1 13:59:00 2026",
@@ -75,13 +75,13 @@
       "RUNTIMELIMIT": "720.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "4",
-      "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/w.acf",
-      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0130_a.9012",
+      "COMMAND": "/home/user/scripts/lsf.py /home/user/hpc_tmp/w.acf",
+      "EXEC_CWD": "/home/user/hpc_tmp/job_variant_0130_a.9012",
       "EXIT_CODE": ""
     },
     {
       "JOBID": "5800005",
-      "JOB_NAME": "cdm_variant_0131_a",
+      "JOB_NAME": "job_variant_0131_a",
       "STAT": "DONE",
       "SUBMIT_TIME": "Sep 29 09:00:00 2026",
       "START_TIME": "Sep 29 09:00:05 2026",
@@ -90,8 +90,8 @@
       "RUNTIMELIMIT": "2400.0",
       "NEXEC_HOST": "1",
       "NTHREADS": "8",
-      "COMMAND": "/home/thornton/scripts/lsf.py /home/thornton/hpc_tmp/v.acf",
-      "EXEC_CWD": "/home/thornton/hpc_tmp/cdm_variant_0131_a.3456",
+      "COMMAND": "/home/user/scripts/lsf.py /home/user/hpc_tmp/v.acf",
+      "EXEC_CWD": "/home/user/hpc_tmp/job_variant_0131_a.3456",
       "EXIT_CODE": "0"
     }
   ]

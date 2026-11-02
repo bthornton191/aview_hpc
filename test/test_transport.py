@@ -1,4 +1,4 @@
-"""Transport unit tests (t_652a2eff): no cluster, no SSH, no paramiko import.
+"""Transport unit tests: no cluster, no SSH, no paramiko import.
 
 Covers the card's deliverable 6:
 
@@ -99,7 +99,7 @@ class TestTransportSelection(unittest.TestCase):
                               return_value=True), \
                  patch.object(LocalTransport, '_check_remote_root',
                               return_value=None):
-                t = select_transport(config={'host': 'sjcvl-thornton',
+                t = select_transport(config={'host': 'submit-host',
                                              'remote_tempdir': td})
             self.assertIsInstance(t, LocalTransport)
         finally:
@@ -110,7 +110,7 @@ class TestTransportSelection(unittest.TestCase):
         with patch.object(transport_module, '_host_is_local',
                           return_value=False), \
              patch.object(SSHTransport, '_connect', return_value=(None, None)):
-            t = select_transport(config={'host': 'sjlsf01.cadence.com'})
+            t = select_transport(config={'host': 'submit.example.com'})
         self.assertIsInstance(t, SSHTransport)
 
     def test_bogus_key_raises(self):
@@ -176,7 +176,7 @@ class TestLocalTransportOps(unittest.TestCase):
         shutil.rmtree(self._scratch, ignore_errors=True)
 
     def test_exec_argv_submit_cmd_multiword(self):
-        # submit_cmd is 'python3 /home/thornton/scripts/lsf.py' style: a
+        # submit_cmd is 'python3 /home/user/scripts/lsf.py' style: a
         # MULTI-WORD string. The SSH path's remote shell split it; local
         # mode must split it too or argv[0] won't resolve.
         out, err = self.transport.exec_argv(
@@ -203,7 +203,7 @@ class TestLocalTransportOps(unittest.TestCase):
                 [sys.executable, '-c', 'import sys; sys.exit(3)'])
 
     def test_exec_argv_missing_program_raises_runtime_error(self):
-        # Not-on-PATH command: RuntimeError (CDM retry handlers catch only
+        # Not-on-PATH command: RuntimeError (consumer retry handlers catch only
         # RuntimeError), not a raw FileNotFoundError/OSError.
         with self.assertRaises(RuntimeError):
             self.transport.exec_argv(['definitely-not-a-command-xyz'])
@@ -317,7 +317,7 @@ class TestLocalTransportOps(unittest.TestCase):
         # Inside Adams View the process env carries PYTHONHOME/PYTHONPATH
         # for the EMBEDDED 3.10; a scheduler child (lsf.py's #!python3 =
         # system 3.9) must not inherit them (live failure on
-        # sjcvl-thornton 2026-10-08: "cannot import name 'text_encoding'").
+        # submit-host 2026-10-08: "cannot import name 'text_encoding'").
         code = ('import sys, os; '
                 'print("PYTHONHOME" in os.environ, '
                 '"PYTHONPATH" in os.environ, '
@@ -370,16 +370,24 @@ class TestLocalStorageGuard(unittest.TestCase):
                 LocalTransport(remote_root=Path(bad))
             self.assertIn('farm-visible', str(ctx.exception))
 
+    def test_farm_roots_from_env_and_config(self):
+        env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_FARM_ROOTS'}
+        with patch.dict(os.environ, env, clear=True),                 patch.object(transport_module, 'get_config', return_value={}):
+            self.assertEqual(transport_module._farm_roots(), ())
+        with patch.dict(os.environ, {'AVIEW_HPC_FARM_ROOTS': '/shared/'}),                 patch.object(transport_module, 'get_config',
+                             return_value={'farm_roots': ['/srv/farm/']}):
+            self.assertEqual(transport_module._farm_roots(), ('/shared/', '/srv/farm/'))
+
     def test_nonexistent_root_refused(self):
         with self.assertRaises(RuntimeError) as ctx:
-            LocalTransport(remote_root=Path('/vols/thornton_space/no_such_dir'))
+            LocalTransport(remote_root=Path('/shared/user/no_such_dir'))
         self.assertIn('does not exist', str(ctx.exception))
 
     def test_existing_vols_root_accepted(self):
         # A /vols root that exists is accepted without touching the network.
         with patch.object(Path, 'is_dir', return_value=True):
-            t = LocalTransport(remote_root=Path('/vols/thornton_space/tmp'))
-        self.assertEqual(t.remote_root, Path('/vols/thornton_space/tmp'))
+            t = LocalTransport(remote_root=Path('/shared/user/tmp'))
+        self.assertEqual(t.remote_root, Path('/shared/user/tmp'))
 
     def test_arbitrary_existing_root_accepted(self):
         # Non-farm layout (unit test host): any existing non-temp dir works.
@@ -396,7 +404,7 @@ class TestParamikoNotImportedLocally(unittest.TestCase):
 
     'Lazily' means NEVER in local mode -- including on a machine where
     paramiko IS installed (the VM deps target has it): the in-Aview probe
-    on sjcvl-thornton first showed hpc_session's eager
+    on submit-host first showed hpc_session's eager
     `from paramiko import AuthenticationException` polluting sys.modules
     even though no SSH connection was ever made. A real (installed)
     paramiko must be hidden with a stub that raises ImportError if
@@ -524,15 +532,15 @@ class TestSSHPathUnchanged(unittest.TestCase):
 
     def test_exec_argv_joins_to_shell_string(self):
         # Historically: ssh.exec_command('python3 lsf.py <acf> --mins 5')
-        self.ssh.exec_argv(['python3 /home/thornton/scripts/lsf.py',
-                            '/vols/x/job.acf', '--mins', '5'])
+        self.ssh.exec_argv(['python3 /home/user/scripts/lsf.py',
+                            '/shared/x/job.acf', '--mins', '5'])
         self.assertEqual(
             self.sent[-1],
-            'python3 /home/thornton/scripts/lsf.py /vols/x/job.acf --mins 5')
+            'python3 /home/user/scripts/lsf.py /shared/x/job.acf --mins 5')
 
     def test_copy_file_uses_cp_command(self):
-        self.ssh.copy_file('/vols/x/a.acf', '/vols/x/b.acf')
-        self.assertEqual(self.sent[-1], 'cp /vols/x/a.acf /vols/x/b.acf')
+        self.ssh.copy_file('/shared/x/a.acf', '/shared/x/b.acf')
+        self.assertEqual(self.sent[-1], 'cp /shared/x/a.acf /shared/x/b.acf')
 
     def test_close_closes_both(self):
         closed = []
@@ -556,7 +564,7 @@ class TestSSHPathUnchanged(unittest.TestCase):
 
 
 class TestReviewRound1(unittest.TestCase):
-    """nnl-reviewer round-1 findings on PR #4 (2026-10-08), all fixed.
+    """Review round-1 findings, all fixed.
 
     Item 1: the SSH path dropped the session's explicit username (it used
     config['username'] only); HPCSession(host, username='explicit_user')
@@ -632,7 +640,7 @@ class TestReviewRound1(unittest.TestCase):
         # fall back to tempfile.gettempdir() (== /tmp on Linux).
         with patch.object(transport_module, 'get_config',
                           return_value={'transport': 'local',
-                                        'host': 'sjcvl-thornton'}):
+                                        'host': 'submit-host'}):
             with self.assertRaises(RuntimeError) as ctx:
                 select_transport()
         self.assertIn('remote_tempdir', str(ctx.exception))
@@ -655,8 +663,8 @@ class TestReviewRound1(unittest.TestCase):
         # test_ssh_username_argument_wins_over_config.
         from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
-        fake_cfg = {'transport': 'local', 'host': 'sjcvl-thornton',
-                    'remote_tempdir': '/vols/ok_space'}
+        fake_cfg = {'transport': 'local', 'host': 'submit-host',
+                    'remote_tempdir': '/shared/ok'}
 
         with patch.object(transport_module, '_host_is_local',
                           return_value=True), \
@@ -672,8 +680,8 @@ class TestReviewRound1(unittest.TestCase):
         # get_config patched in both modules (session + transport).
         from aview_hpc import _cli as cli_module
         from aview_hpc._cli import HPCSession
-        fake_cfg = {'transport': 'local', 'host': 'sjcvl-thornton',
-                    'remote_tempdir': '/vols/other'}
+        fake_cfg = {'transport': 'local', 'host': 'submit-host',
+                    'remote_tempdir': '/shared/other'}
 
         td = scratch_dir()
         try:
@@ -718,7 +726,7 @@ class TestReviewRound1(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_last_update_local_missing_extension(self):
-        # The reviewer's repro: a dir holding only .res/.msg (no .out)
+        # The repro: a dir holding only .res/.msg (no .out)
         # used to die with "exited with status 2"; listdir+stat must work.
         from aview_hpc._cli import HPCSession
 
@@ -774,7 +782,7 @@ class TestReviewRound1(unittest.TestCase):
 
         session = object.__new__(HPCSession)
         session.transport = _FakeSSHTransport()
-        session.remote_dir = Path('/vols/x/job.abc1')
+        session.remote_dir = Path('/shared/x/job.abc1')
 
         dt, last_file = session.last_update
         self.assertEqual(last_file, Path('r.res'))

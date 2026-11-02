@@ -29,7 +29,7 @@
             "program": "${workspaceFolder}/aview_hpc/_cli.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["get_results", "test\\results", "/home/ben.thornton/.tmp/tmp.0IPj3YbXtD", "-e", ".msg"]
+            "args": ["get_results", "test\\results", "/home/user/tmp", "-e", ".msg"]
         },
         {
             "name": "CLI Get Results",
@@ -38,7 +38,7 @@
             "program": "${workspaceFolder}/aview_hpc/_cli.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["get_results", "test\\results", "/home/ben.thornton/.tmp/tmp.0IPj3YbXtD"]
+            "args": ["get_results", "test\\results", "/home/user/tmp"]
         },
         {
             "name": "CLI Submit with Auxillary Files",

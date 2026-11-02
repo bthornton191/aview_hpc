@@ -6,7 +6,7 @@ shelled out to a frozen ``aview_hpc.exe`` (downloaded by
 ``subprocess.Popen`` call sites built ``subprocess.STARTUPINFO()`` and a
 joined shell string unconditionally -- both raise on POSIX
 (``AttributeError`` / ``Unsupported platform: Linux``), which killed the
-first farm-backed Linux CI run (2026-10-08, run 37793054830).
+first farm-backed Linux CI run (2026-10-08).
 
 This module owns every platform decision the client needs:
 
@@ -22,9 +22,9 @@ This module owns every platform decision the client needs:
   there, and the interpreter that imported this module is by definition
   able to import ``aview_hpc._cli`` -- inside Adams View on Linux that is
   Adams' embedded 3.10, which is the interpreter the deps target
-  (``/tmp/thornton/adams_py310``) is installed for.  Spawning
+  (``/tmp/user/adams_py310``) is installed for.  Spawning
   ``sys.executable -m aview_hpc`` instead would use the SYSTEM 3.9 inside
-  aview (CDM AGENTS.md rule 2), which cannot see the deps target.  The
+  aview (a project rule), which cannot see the deps target.  The
   in-process path reproduces the exe's error contract and restores all
   process state it touches (see :func:`_run_cli_inprocess`).
 """
@@ -89,13 +89,13 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     every non-remote ``Path`` argument to an absolute path itself, so the
     chdir only has to cover paths the caller passed as relative strings).
 
-    Hermetic stdout (t_11595f7b): the CLI's machine-readable stdout must
+    Hermetic stdout: the CLI's machine-readable stdout must
     contain ONLY the CLI's own final ``print``.  The HOST process may
     configure ROOT logging handlers whose ``emit()`` writes straight to
-    ``sys.stdout`` -- the CDM plugin inside Adams View does exactly this
+    ``sys.stdout`` -- the a client plugin inside Adams View does exactly this
     (``AdamsLogFileHandler.emit`` is ``print(msg)``, ``general/log.py``),
     and under ``redirect_stdout`` every such record landed in the JSON
-    capture buffer AHEAD of the payload: CI run 37923731507 submitted LSF
+    capture buffer AHEAD of the payload: a CI run submitted LSF
     job 1337242 (DONE, clean stderr) and then died at
     ``json.loads(out)`` char 0.  Swapping ``handler.stream`` (the 0.5.1
     approach) only covers stream-based handlers; print-, socket- or
@@ -114,16 +114,16 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     written into the captured stderr buffer as a formatted traceback,
     exactly what a crashed exe subprocess printed on stderr.  The
     ``aview_hpc.aview_hpc`` wrapper then raises its usual
-    ``RuntimeError``.  Callers like CDM ``hpc_jobs.py`` / ``base_test.py``
+    ``RuntimeError``.  Callers such as consumer job-runner modules
     catch only ``RuntimeError``; letting the raw exception class escape
-    would break their retry/abort handling (review round 1, t_d1685315).
+    would break their retry/abort handling.
 
     Process state (``sys.excepthook``, root logger level, root handler
     set) is saved before the call and restored in the ``finally``
     block: ``main()`` installs its own ``sys.excepthook`` and sets the
     root level from ``--log_level`` (default INFO); leaving those set
     would permanently change the host process (Adams View) after a
-    single client call (review round 1, t_d1685315).
+    single client call.
 
     The CLI logs through the ``logging`` package; its root handler writes
     to stderr, which the caller would misread as a real error (the
@@ -148,14 +148,14 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
     # error (historic exe contract), and the JSON on stdout must stay
     # parseable. Two leak paths exist:
     #   1. handlers on the root logger. Stream-based handlers were
-    #      swapped (0.5.1); print-based handlers (CDM's
+    #      swapped (0.5.1); print-based handlers (a consumer's
     #      AdamsLogFileHandler inside Adams View) STILL wrote to
     #      sys.stdout/sys.stderr via their emit(), polluting the JSON
-    #      (t_11595f7b, run 37923731507). Every existing root handler is
+    #      (a CI run). Every existing root handler is
     #      therefore DETACHED for the duration and re-attached in order
     #      in the finally block -- regardless of how its emit() writes.
     #   2. NO handlers at all (the case inside a fresh Adams View:
-    #      probed on sjcvl-thornton, root.handlers == []) -> logging
+    #      probed on submit-host, root.handlers == []) -> logging
     #      falls back to logging.lastResort, a _StderrHandler that
     #      writes straight to sys.stderr, which redirect_stderr captures
     #      as process stderr. The scratch handler below also covers this.
@@ -182,7 +182,7 @@ def _run_cli_inprocess(argv: List[str], cwd: Optional[Path] = None) -> Tuple[str
         # into RuntimeError. SystemExit (argparse / exit(2) error
         # paths) and scheduler exceptions (paramiko.SSHException,
         # socket.gaierror, OSError) MUST arrive here too, not escape
-        # raw -- CDM's retry handlers catch only RuntimeError
+        # raw -- a consumer's retry handlers catch only RuntimeError
         # (hpc_jobs.py:188, base_test.py:982; review round 1).
         print(traceback.format_exc(), file=err_io)
     finally:

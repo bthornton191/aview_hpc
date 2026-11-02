@@ -42,7 +42,7 @@ def _keyring_get_password(service: str, username: str):
     session bus) the default ``keyring`` backend is SecretService, whose
     ``get_password`` blocks indefinitely waiting for a D-Bus reply that
     never comes -- there is no timeout anywhere in that stack. This was
-    observed live on sjcvl-thornton (2026-10-08): a batch ``aview ru-st b``
+    observed live on submit-host (2026-10-08): a batch ``aview ru-st b``
     run sat for 15+ minutes inside ``HPCSession._connect`` before being
     killed manually.
 
@@ -108,7 +108,7 @@ class HPCSession():
         self.job_name: str = job_name
         self.job_id: int = job_id
 
-        # Transport seam (t_652a2eff): local when running ON the submit
+        # Transport seam: local when running ON the submit
         # host, SSH otherwise.  select_transport logs which one and why.
         # The session's RESOLVED username/key_filename/remote_tempdir are
         # passed through: the SSH path keeps the argument-over-config
@@ -131,7 +131,7 @@ class HPCSession():
     def _connect(self):
         """Deprecated seam kept for the in-Aview job_monitor dashboard only.
 
-        The transport refactor (t_652a2eff) moved connection handling into
+        The transport refactor moved connection handling into
         :class:`aview_hpc.transport.SSHTransport`.  The (un-shipped)
         job_monitor dashboard still reaches for ``session.ssh``/``session.ftp``
         directly; exposing the underlying paramiko objects here keeps that

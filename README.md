@@ -51,7 +51,7 @@ Where
   historical behaviour) or `local` (run scheduler commands directly with no SSH).
   When the key is not set, aview_hpc uses `local` only if the configured `host`
   resolves to the machine the client is running on (the LSF submit-host case, e.g.
-  the sjcvl-thornton qual VM), otherwise `ssh`. The choice is logged.
+  a Linux submit host), otherwise `ssh`. The choice is logged.
 
 The scheduler key controls how aview_hpc parses job submissions and job tables:
 
@@ -67,6 +67,42 @@ The scheduler key controls how aview_hpc parses job submissions and job tables:
   not included in the table. For jobs still running, LSF reports a *projected* finish time
   (unlike slurm, which reports unknown) — use `State`, not `End`, to decide whether a job
   is still running.
+
+### LSF site settings
+
+Site-specific LSF values are not hard-coded. Each can be set as a key in
+`~/.aview_hpc` (JSON) **on the machine that runs the command** or as an
+environment variable (the environment wins). All have neutral defaults.
+
+| `~/.aview_hpc` key | Environment variable | Default | Used by | Meaning |
+|---|---|---|---|---|
+| `bsub` | `AVIEW_HPC_BSUB` | `bsub` (on `PATH`) | `lsf.py` | bsub executable, e.g. `/opt/lsf/bin/bsub` |
+| `bjobs` | `AVIEW_HPC_BJOBS` | `bjobs` (on `PATH`) | client | bjobs executable, e.g. `/opt/lsf/bin/bjobs` |
+| `queue` | `AVIEW_HPC_QUEUE` | `normal` | `lsf.py` | default `bsub -q` queue |
+| `res_req` | `AVIEW_HPC_RES_REQ` | empty | `lsf.py` | default `bsub -R` resource requirement (`span[hosts=1]` is always added) |
+| `farm_roots` | `AVIEW_HPC_FARM_ROOTS` | none | client (local transport) | farm-visible storage roots, e.g. `["/shared/"]` (a JSON list, or one string separated by `os.pathsep`) |
+| `project` | `LSF_PROJECT` | none | `lsf.py` | `bsub -P` label `PRODUCT:RELEASE:GROUP:PURPOSE[:extra]`, e.g. `EXAMPLE:1.0:GRP:PURPOSE` |
+| `adams_home` | `ADAMS_HOME` | none | `lsf.py` | Adams installation directory |
+| `license` | `MSC_LICENSE_FILE` | none | `lsf.py` | license string, e.g. `1700@license.example.com` |
+
+Command-line flags to `lsf.py` (`--queue`, `--res_req`, ...) override both.
+Example `~/.aview_hpc` on a submit host:
+
+```json
+{
+    "scheduler": "lsf",
+    "transport": "local",
+    "remote_tempdir": "/shared/user/aview_hpc",
+    "bsub": "/opt/lsf/bin/bsub",
+    "bjobs": "/opt/lsf/bin/bjobs",
+    "queue": "normal",
+    "res_req": "select[type==any]",
+    "farm_roots": ["/shared/"],
+    "project": "EXAMPLE:1.0:GRP:PURPOSE",
+    "adams_home": "/opt/adams/2023_4_1",
+    "license": "1700@license.example.com"
+}
+```
 
 ### Transport (local vs SSH)
 
@@ -84,7 +120,7 @@ and to be on farm-visible storage — a job directory on local-only disk (e.g.
 `/tmp` on the submit host) is invisible to the LSF execution hosts, so aview_hpc
 refuses such a root (and refuses to run without one at all, rather than falling
 back to the system temp dir) instead of submitting a job that can never run.
-Use e.g. `/vols/<user>_space/aview_hpc`.
+Use e.g. `/shared/<user>/aview_hpc`.
 
 ### Authentication
 
@@ -139,6 +175,16 @@ submit(
 )
 ```
 
+## Changelog
+
+- **0.6.0** - Site configuration moved out of code: LSF `bsub`/`bjobs` paths,
+  default queue, default resource requirement and farm-visible storage roots
+  now come from `~/.aview_hpc` keys or `AVIEW_HPC_*` environment variables (see
+  *LSF site settings*), with neutral defaults. Committed logs and result files
+  were removed, fixtures and examples use placeholders, and a denylist check
+  was added. **Upgrade note:** installations that relied on the previous
+  built-in LSF paths, queue and resource requirement must set the keys above.
+
 ## Development
 
 ### Releasing
@@ -183,6 +229,16 @@ pip install -r requirements.txt
 freeze.bat
 ```
 
+### Public repository: denylist check
+
+This repository is public. `scripts/check_denylist.py` fails on site-,
+customer- or project-specific strings (case-insensitive regexes listed in the
+script; exemptions only via `scripts/denylist_allow.txt`). It runs in CI
+(`.github/workflows/denylist.yml`) and can be used as a pre-commit hook
+(`.pre-commit-config.yaml`). Never commit job logs or result files; use
+synthetic fixtures and placeholders such as `farm.example.com`,
+`/home/user/...`, `EXAMPLE:1.0:GRP:PURPOSE`.
+
 ### Testing
 
 > [!WARNING]
@@ -196,7 +252,7 @@ python -m unittest test.test_schedulers -v
 python -m unittest test.test_platform -v
 ```
 
-### Smoke test against the Cadence sjlsf01 LSF farm (manual)
+### Smoke test against the LSF farm (manual)
 
 This procedure verifies the LSF path end to end against the real farm, using a
 5-minute trivial job. **A valid `-P` charge code must be supplied by the user** —
@@ -205,25 +261,25 @@ read-only checks.
 
 1. Copy `hpc_scripts/lsf.py` to the submit host and make it executable:
    ```shell
-   ssh thornton@sjcvl-thornton.cadence.com 'mkdir -p ~/scripts'
-   scp hpc_scripts/lsf.py thornton@sjcvl-thornton.cadence.com:~/scripts/lsf.py
-   ssh thornton@sjcvl-thornton.cadence.com 'chmod +x ~/scripts/lsf.py'
+   ssh user@submit.example.com 'mkdir -p ~/scripts'
+   scp hpc_scripts/lsf.py user@submit.example.com:~/scripts/lsf.py
+   ssh user@submit.example.com 'chmod +x ~/scripts/lsf.py'
    ```
 2. Dry-run the submit script (prints the bsub command line and job script,
    submits nothing):
    ```shell
-   ssh thornton@sjcvl-thornton.cadence.com \
-     'python3 ~/scripts/lsf.py /home/thornton/hpc_tmp/smoke.acf --mins 5 \
+   ssh user@submit.example.com \
+     'python3 ~/scripts/lsf.py /home/user/hpc_tmp/smoke.acf --mins 5 \
        --project <PRODUCT:RELEASE:GROUP:PURPOSE> \
-       --adams_home /home/thornton/adams/2023_4_1 \
-       --license 1700@sjflex5 --dry_run'
+       --adams_home /home/user/adams/2023_4_1 \
+       --license 1700@license.example.com --dry_run'
    ```
 3. Configure the client for LSF:
    ```shell
-   python -m aview_hpc set_config --host sjcvl-thornton.cadence.com --username thornton
+   python -m aview_hpc set_config --host submit.example.com --username user
    python -m aview_hpc set_config --scheduler lsf
-   python -m aview_hpc set_config --submit_cmd 'python3 /home/thornton/scripts/lsf.py'
-   python -m aview_hpc set_config --remote_tempdir /home/thornton/hpc_tmp
+   python -m aview_hpc set_config --submit_cmd 'python3 /home/user/scripts/lsf.py'
+   python -m aview_hpc set_config --remote_tempdir /home/user/hpc_tmp
    ```
    (No keyring password: key auth via `~/.ssh/id_ed25519` is used automatically.)
 4. Verify the job table renders:
@@ -235,7 +291,7 @@ read-only checks.
    ```shell
    python -m aview_hpc submit smoke.acf --adm_file smoke.adm --mins 5 \
        --project <PRODUCT:RELEASE:GROUP:PURPOSE> \
-       --adams_home /home/thornton/adams/2023_4_1 \
-       --license 1700@sjflex5
+       --adams_home /home/user/adams/2023_4_1 \
+       --license 1700@license.example.com
    ```
  

@@ -26,10 +26,10 @@ def _clean_err(err):
 def _parse_cli_json(out: str, what: str):
     """Parse the CLI's machine-readable stdout, defensively.
 
-    Layer 1 is the hermetic in-process capture (platform.py, t_11595f7b):
+    Layer 1 is the hermetic in-process capture (platform.py):
     the CLI's stdout should contain ONLY the JSON.  But the client has
     survived a generation of leak paths (host print-based logging
-    handlers under ``redirect_stdout``, CI run 37923731507), so this
+    handlers under ``redirect_stdout``, a CI run), so this
     parser does not trust the whole buffer:
 
     * the whole buffer is tried first (the normal, clean case);
