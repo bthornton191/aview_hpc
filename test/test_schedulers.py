@@ -535,6 +535,75 @@ class TestLSFScript(unittest.TestCase):
             self.assertIn('would run: /opt/lsf/bin/bsub -q short ', line)
             self.assertIn("-R 'select[type==any] span[hosts=1]'", line)
 
+    def test_apply_exclude_models(self):
+        f = lsf_script.apply_exclude_models
+        # empty list / None / '': res_req untouched (default is site-neutral)
+        for empty in ([], None, '', ' , '):
+            self.assertEqual(f('select[type==any]', empty), 'select[type==any]')
+        self.assertEqual(f('', []), '')
+        # one model, no existing select -> select prepended
+        self.assertEqual(f('', ['ModelA']), 'select[model!=ModelA]')
+        self.assertEqual(f('span[hosts=1]', ['ModelA']),
+                         'select[model!=ModelA] span[hosts=1]')
+        # one model, existing select AND-ed (original grouped)
+        self.assertEqual(
+            f('select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]', ['ModelA']),
+            'select[((OSMJR==8 && OSMNR>=6) || OSMJR>=9) && model!=ModelA]')
+        # several models; comma string accepted; duplicates dropped
+        self.assertEqual(f('select[x] rusage[mem=1]', ['A', 'B', 'A']),
+                         'select[(x) && model!=A && model!=B] rusage[mem=1]')
+        self.assertEqual(f('select[x]', 'A, B'),
+                         'select[(x) && model!=A && model!=B]')
+        with self.assertRaises(ValueError):
+            f('', ['bad name; rm'])
+        with self.assertRaises(ValueError):
+            f('select[x', ['A'])
+
+    def test_load_config_keeps_exclude_models_list(self):
+        with TemporaryDirectory() as tmpdir:
+            cfg = Path(tmpdir) / 'c.json'
+            cfg.write_text(json.dumps({'exclude_models': ['A', ' ', 'B']}))
+            self.assertEqual(lsf_script.load_config(cfg), {'exclude_models': ['A', 'B']})
+            cfg.write_text(json.dumps({'exclude_models': [1, 2]}))
+            self.assertEqual(lsf_script.load_config(cfg), {})
+
+    def _dry_run_line(self, cfg, extra=(), env_extra=None):
+        argv_tail = ['--mins', '5', '--project', 'EXAMPLE:1.0:GRP:PURPOSE',
+                     '--adams_home', '/home/user/adams', '--license',
+                     '1700@license.example.com', '--dry_run', *extra]
+        clean = {k: v for k, v in os.environ.items() if not k.startswith('AVIEW_HPC_')}
+        clean.update(env_extra or {})
+        with TemporaryDirectory() as tmpdir:
+            acf = self._write_model(tmpdir)
+            argv = ['lsf.py', str(acf)] + argv_tail
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value=cfg),                     patch('sys.stdout', new=StringIO()) as out:
+                lsf_script.main()
+        return next(l for l in out.getvalue().splitlines()
+                    if l.startswith('DRY-RUN: would run:'))
+
+    def test_exclude_models_end_to_end_single_R(self):
+        # default: empty -> nothing site-specific, no model term at all
+        line = self._dry_run_line({})
+        self.assertNotIn('model!=', line)
+        self.assertEqual(line.count(' -R '), 1)
+        # one model from config, merged into the configured select, single -R
+        line = self._dry_run_line({'res_req': 'select[type==any]',
+                                   'exclude_models': ['ModelA']})
+        self.assertEqual(line.count(' -R '), 1)
+        self.assertIn("-R 'select[(type==any) && model!=ModelA] span[hosts=1]'", line)
+        # several models from config, no res_req
+        line = self._dry_run_line({'exclude_models': ['ModelA', 'ModelB']})
+        self.assertEqual(line.count(' -R '), 1)
+        self.assertIn("-R 'select[model!=ModelA && model!=ModelB] span[hosts=1]'", line)
+        # CLI flag overrides config; env var used when no flag
+        line = self._dry_run_line({'exclude_models': ['ModelA']},
+                                  extra=['--exclude_models', 'ModelC'])
+        self.assertIn('model!=ModelC', line)
+        self.assertNotIn('ModelA', line)
+        line = self._dry_run_line({}, env_extra={'AVIEW_HPC_EXCLUDE_MODELS': 'ModelD,ModelE'})
+        self.assertIn('select[model!=ModelD && model!=ModelE]', line)
+        self.assertEqual(line.count(' -R '), 1)
+
     def test_submit_rejects_forwarded_extras(self):
         """Unknown/extra args forwarded after the options would become the
         bsub job COMMAND line (overriding the stdin-fed job script, exit 127):

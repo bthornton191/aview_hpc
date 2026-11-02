@@ -80,6 +80,7 @@ environment variable (the environment wins). All have neutral defaults.
 | `bjobs` | `AVIEW_HPC_BJOBS` | `bjobs` (on `PATH`) | client | bjobs executable, e.g. `/opt/lsf/bin/bjobs` |
 | `queue` | `AVIEW_HPC_QUEUE` | `normal` | `lsf.py` | default `bsub -q` queue |
 | `res_req` | `AVIEW_HPC_RES_REQ` | empty | `lsf.py` | default `bsub -R` resource requirement (`span[hosts=1]` is always added) |
+| `exclude_models` (list) | `AVIEW_HPC_EXCLUDE_MODELS` (comma-separated) | empty | `lsf.py` | host models to exclude (e.g. models whose FP output differs); folded as `model!=<M>` into the `select[]` of the single `-R` |
 | `farm_roots` | `AVIEW_HPC_FARM_ROOTS` | none | client (local transport) | farm-visible storage roots, e.g. `["/shared/"]` (a JSON list, or one string separated by `os.pathsep`) |
 | `project` | `LSF_PROJECT` | none | `lsf.py` | `bsub -P` label `PRODUCT:RELEASE:GROUP:PURPOSE[:extra]`, e.g. `EXAMPLE:1.0:GRP:PURPOSE` |
 | `adams_home` | `ADAMS_HOME` | none | `lsf.py` | Adams installation directory |
@@ -177,6 +178,8 @@ submit(
 
 ## Changelog
 
+- **0.6.1** - `lsf.py`: configurable host-model exclusion (`exclude_models`,
+  `--exclude_models`, `AVIEW_HPC_EXCLUDE_MODELS`); default empty.
 - **0.6.0** - Site configuration moved out of code: LSF `bsub`/`bjobs` paths,
   default queue, default resource requirement and farm-visible storage roots
   now come from `~/.aview_hpc` keys or `AVIEW_HPC_*` environment variables (see
