@@ -132,14 +132,16 @@ class TestLSFBackend(unittest.TestCase):
             cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.startswith('env LC_ALL=C /opt/lsf/bin/bjobs -a -o "'))
         env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
-        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config',
+        with patch.dict(os.environ, env, clear=True), \
+                patch('aview_hpc.schedulers._site_config',
                       return_value={'bjobs': '/srv/lsf/bin/bjobs'}):
             cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.startswith('env LC_ALL=C /srv/lsf/bin/bjobs -a '))
 
     def test_job_table_command_default_bjobs_on_path(self):
         env = {k: v for k, v in os.environ.items() if k != 'AVIEW_HPC_BJOBS'}
-        with patch.dict(os.environ, env, clear=True),                 patch('aview_hpc.schedulers._site_config', return_value={}):
+        with patch.dict(os.environ, env, clear=True), \
+                patch('aview_hpc.schedulers._site_config', return_value={}):
             cmd = self.backend.job_table_command(days=7)
         self.assertTrue(cmd.startswith('env LC_ALL=C bjobs -a -o "'))
 
@@ -485,7 +487,8 @@ class TestLSFScript(unittest.TestCase):
             site_env = {'AVIEW_HPC_BSUB': '/opt/lsf/bin/bsub',
                         'AVIEW_HPC_QUEUE': 'lnx64',
                         'AVIEW_HPC_RES_REQ': 'select[(OSMJR==8 && OSMNR>=6) || OSMJR>=9]'}
-            with patch.object(sys, 'argv', argv), patch.dict(os.environ, site_env),                     patch('sys.stdout', new=StringIO()) as out:
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, site_env), \
+                    patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
             output = out.getvalue()
 
@@ -519,7 +522,9 @@ class TestLSFScript(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf)] + argv_tail
-            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value={}),                     patch('sys.stdout', new=StringIO()) as out:
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True), \
+                    patch.object(lsf_script, 'load_config', return_value={}), \
+                    patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
             line = next(l for l in out.getvalue().splitlines()
                         if l.startswith('DRY-RUN: would run:'))
@@ -528,7 +533,9 @@ class TestLSFScript(unittest.TestCase):
 
             cfg = {'bsub': '/opt/lsf/bin/bsub', 'queue': 'short',
                    'res_req': 'select[type==any]'}
-            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value=cfg),                     patch('sys.stdout', new=StringIO()) as out:
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True), \
+                    patch.object(lsf_script, 'load_config', return_value=cfg), \
+                    patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
             line = next(l for l in out.getvalue().splitlines()
                         if l.startswith('DRY-RUN: would run:'))
@@ -576,7 +583,9 @@ class TestLSFScript(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             acf = self._write_model(tmpdir)
             argv = ['lsf.py', str(acf)] + argv_tail
-            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True),                     patch.object(lsf_script, 'load_config', return_value=cfg),                     patch('sys.stdout', new=StringIO()) as out:
+            with patch.object(sys, 'argv', argv), patch.dict(os.environ, clean, clear=True), \
+                    patch.object(lsf_script, 'load_config', return_value=cfg), \
+                    patch('sys.stdout', new=StringIO()) as out:
                 lsf_script.main()
         return next(l for l in out.getvalue().splitlines()
                     if l.startswith('DRY-RUN: would run:'))
